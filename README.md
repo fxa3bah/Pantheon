@@ -197,6 +197,55 @@ Architecture, invariants, and the full change log are in [`CLAUDE.md`](./CLAUDE.
 
 ---
 
+## Richer end-to-end scenarios
+
+**1. Visual + code hand-off (round trip).**
+```
+# Claude → Grok: generate the hero set
+/grok-imagine three matching lifestyle hero shots of a folded waffle towel set (sage/sand/ivory) on oak, soft daylight, 3:2
+# Grok → Claude (from a Grok session): build the UI that consumes them
+claude-delegate write a responsive React hero component that uses the three images in ~/Pictures/grok-imagine/<date>/<job>/ with proper alt text
+```
+Grok owns the visuals; Claude owns the code. Assets travel via the gallery, code via the reverse leg.
+
+**2. Feedback loop (iterate without losing Grok's brilliance).**
+```
+/grok-imagine a cinematic product shot of a linen napkin on marble, soft window light, 3:2
+# Look at it, then from Grok translate your notes into a precise edit prompt:
+grok-imagine-from-claude-feedback the lighting is too flat — add strong rim light from upper-left, keep the exact folds and marble, 3:2
+```
+The `grok-imagine-from-claude-feedback` skill turns loose feedback into reference-aware `image_edit`
+prompts so iteration stays on the Grok side where it's strongest.
+
+**3. Grounded creative + multi-agent review.**
+```
+/grok-imagine a campaign key visual that feels current for a 2026 spring home-textiles launch (let Grok use search grounding), 3:2
+/grok-review assess the campaign concept + the landing-page copy for clarity, claims, and brand fit --background
+```
+Grok grounds the creative with live search and runs a multi-perspective review; you get both the
+asset and a synthesized critique.
+
+---
+
+## Future roadmap
+
+Prioritized, still-open work (none blocking; the bridge is fully functional today):
+
+1. **Live-smoke the reverse leg** (Grok→Claude) from an actual Grok session and capture the result.
+2. **Session reuse** — thread Grok's `session_id` through `--continue` so "edit the previous image"
+   keeps full context instead of starting cold.
+3. **Gallery `index.json`** — a manifest (job id, prompt, paths, ts, cost) so `/grok:status` and a
+   future gallery viewer don't have to rescan disk.
+4. **True token streaming** (`--output-format streaming-json`) if the current stderr heartbeat isn't
+   enough live feedback.
+5. **Cost on the Grok leg** — surface usage if/when the `grok` headless JSON starts returning it
+   (today only the Claude leg reports `total_cost_usd`).
+
+See [`CLAUDE.md`](./CLAUDE.md) for the full change log and engineering invariants, and
+[`docs/BRIDGE-AUDIT.md`](./docs/BRIDGE-AUDIT.md) for the original audit.
+
+---
+
 ## FAQ
 
 **Do I need API keys?** No. Only the locally OAuth-authenticated `grok` / `claude` binaries.

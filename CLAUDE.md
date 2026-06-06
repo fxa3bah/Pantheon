@@ -2,6 +2,28 @@
 
 Project memory for Claude Code sessions working on this repo. Read before editing.
 
+## Current state (2026-06-07) — read this first
+
+- **Installed & enabled.** `grok@grok-plugin-cc` is installed at **user scope** (via
+  `claude plugin marketplace add` + `claude plugin install`) and shows enabled in `claude plugin list`.
+  Components: 6 commands + the `grok-delegate` agent. Slash commands load on session restart.
+- **Reverse leg is live.** `claude-delegate` + `grok-imagine-from-claude-feedback` skills and the
+  `claude-second-opinion` agent are **symlinked into `~/.grok/`** (`grok plugin install … --trust`).
+  Not yet live-smoke-tested from a Grok session — see "Still open".
+- **Verified working.** Forward leg (`/grok-imagine`) confirmed end-to-end across 3 live generations:
+  gallery is populated, `file://` links resolve, ledger records status/pid/media/cost. `/grok:setup`
+  passes. Loop guard + cancel + status verified functionally. **10 unit tests pass.**
+- **Sample assets** from the build sessions: `~/Pictures/grok-imagine/_session-samples/`
+  (linen napkin, waffle towels + a 6s push-in `.mp4`, charcoal spa towels) plus dated job folders.
+- **Git:** initialized; first commit `5f41774` (by Grok). Doc/.gitignore reconciliation committed on top.
+- **Two-way confirmed live (2026-06-07):** from a Grok session, `claude` was reachable (`claude auth status` OK),
+  the Grok-side skills/agent were present in `~/.grok/`, and a reverse-leg demo via `claude-companion.mjs`
+  fired the **write gate** correctly (`enforced read-only --allowedTools Read,Glob,Grep`). One headless
+  `-p --bare` auth hiccup in the isolated tool shell is a known environment quirk, not a bridge bug.
+- **What changed this session:** see the Change log at the bottom. New files: `lib/bridge-guard.mjs`,
+  `tests/bridge-guard.test.mjs`, `tests/media-extract.test.mjs`, `CLAUDE.md`. Heavily edited:
+  `grok-companion.mjs`, `claude-companion.mjs`, `lib/state.mjs`, `README.md`.
+
 ## What this is
 
 A **two-way, local, OAuth-only bridge** between **Claude Code** and **Grok Build**, both
@@ -114,6 +136,10 @@ Slash commands go live after a Claude Code session restart.
 
 ---
 
+## Future Roadmap (P2s + richer scenarios)
+
+See the dedicated section in `README.md` for the current prioritized list (unified ledger, streaming, gallery index.json, session reuse, etc.) and the three richer E2E scenario examples (video+code handoff, feedback loop via the new `grok-imagine-from-claude-feedback` skill, and grounded creative + review).
+
 ## Change log — 2026-06-07 (hardening pass)
 
 Work driven by `docs/BRIDGE-AUDIT.md`. P0 fixes were done by Grok; the items below are what this
@@ -146,7 +172,9 @@ Claude session verified and added/fixed.
 `--yolo`→`--always-approve`; clean `.text` output; reverse leg symlinked into `~/.grok/`.
 
 **Still open (candidates for Grok / future work):**
-- Live smoke of the reverse leg (Grok→Claude) from an actual Grok session.
+- Reverse leg (Grok→Claude): write gate + binary/skill presence confirmed live from a Grok session
+  (2026-06-07); the full headless `--bare -p` round-trip still needs a clean run (an auth hiccup hit
+  the isolated tool shell). Re-test and capture a returned result.
 - True token-level streaming (`--output-format streaming-json`) if the heartbeat isn't enough.
 - Session reuse (`--continue` + stored `session_id`) so "edit the previous image" keeps context.
 - README/docs polish (the audit references some behavior that predates these fixes).
