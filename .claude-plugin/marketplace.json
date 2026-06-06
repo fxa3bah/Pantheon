@@ -1,0 +1,23 @@
+{
+  "name": "grok-plugin-cc",
+  "owner": {
+    "name": "Fahd Akhtar"
+  },
+  "metadata": {
+    "description": "Two-way local OAuth-only bridge between Claude Code and Grok Build. Claude hands visual work (Grok Imagine) and multi-agent reviews to Grok; Grok can hand complementary tasks back.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "grok",
+      "description": "Bridge to Grok Build: /grok-imagine for all image+video generation/editing, /grok-review for multi-agent delegation. Local OAuth only, no API keys.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Fahd Akhtar"
+      },
+      "source": "./plugins/grok",
+      "category": "productivity",
+      "tags": ["grok", "imagine", "image-generation", "video", "multi-agent", "review", "xai"]
+    }
+  ]
+}

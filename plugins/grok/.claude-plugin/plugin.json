@@ -1,0 +1,22 @@
+{
+  "name": "grok",
+  "version": "0.1.0",
+  "description": "Two-way bridge to Grok Build. /grok-imagine for all image+video (Grok Imagine superpower). /grok-review for explicit multi-agent delegation. Symmetric hand-off the other way too. Local OAuth only, no API keys.",
+  "author": {
+    "name": "Fahd Akhtar"
+  },
+  "homepage": "https://github.com/faadi/grok-plugin-cc",
+  "repository": "https://github.com/faadi/grok-plugin-cc",
+  "license": "MIT",
+  "keywords": [
+    "grok",
+    "imagine",
+    "image-generation",
+    "video",
+    "multi-agent",
+    "review",
+    "delegation",
+    "bridge",
+    "xai"
+  ]
+}

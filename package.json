@@ -1,0 +1,19 @@
+{
+  "name": "grok-plugin-cc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Two-way local OAuth-only bridge between Claude Code and Grok Build. Claude hands visual work (Grok Imagine) and multi-agent reviews to Grok; Grok can hand complementary tasks back. Same machine, existing auth, clean artifact handoff.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "bump-version": "node scripts/bump-version.mjs",
+    "test": "node --test tests/*.test.mjs || echo 'tests not yet wired'"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}
