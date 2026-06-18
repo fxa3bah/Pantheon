@@ -1,12 +1,20 @@
-# CLAUDE.md — grok-plugin-cc
+# CLAUDE.md — Pantheon
 
 Project memory for Claude Code sessions working on this repo. Read before editing.
 
-## Current state (2026-06-07) — read this first
+## Current state — read this first
 
-- **Installed & enabled.** `grok@grok-plugin-cc` is installed at **user scope** (via
+- **2026-06-18 — renamed `grok-plugin-cc` → Pantheon** (folder, marketplace name `pantheon`, GitHub
+  `fxa3bah/Pantheon`). Plugin name stays `grok` and the `/grok:*` commands are unchanged. Added the
+  Codex legs, structured Pantheon packets (`lib/pantheon-packet.mjs`), and `/grok:health`. Fixed the
+  Grok→Claude `--bare` OAuth defect (now non-bare local OAuth by default) and the live-health
+  false-green (compute-challenge sentinels). **27/27 tests pass; live six-direction handshake green.**
+
+### Earlier state (2026-06-07)
+
+- **Installed & enabled.** `grok@pantheon` is installed at **user scope** (via
   `claude plugin marketplace add` + `claude plugin install`) and shows enabled in `claude plugin list`.
-  Components: 6 commands + the `grok-delegate` agent. Slash commands load on session restart.
+  Components: 7 commands + the `grok-delegate` agent. Slash commands load on session restart.
 - **Reverse leg is live.** `claude-delegate` + `grok-imagine-from-claude-feedback` skills and the
   `claude-second-opinion` agent are **symlinked into `~/.grok/`** (`grok plugin install … --trust`).
   Not yet live-smoke-tested from a Grok session — see "Still open".
@@ -18,28 +26,37 @@ Project memory for Claude Code sessions working on this repo. Read before editin
 - **Git:** initialized; first commit `5f41774` (by Grok). Doc/.gitignore reconciliation committed on top.
 - **Two-way confirmed live (2026-06-07):** from a Grok session, `claude` was reachable (`claude auth status` OK),
   the Grok-side skills/agent were present in `~/.grok/`, and a reverse-leg demo via `claude-companion.mjs`
-  fired the **write gate** correctly (`enforced read-only --allowedTools Read,Glob,Grep`). One headless
-  `-p --bare` auth hiccup in the isolated tool shell is a known environment quirk, not a bridge bug.
+  fired the **write gate** correctly (`enforced read-only --allowedTools Read,Glob,Grep`). Later evidence
+  showed `--bare` skips local OAuth/keychain auth and can produce `Not logged in`; the bridge now defaults
+  to non-bare local OAuth mode for Grok→Claude.
 - **What changed this session:** see the Change log at the bottom. New files: `lib/bridge-guard.mjs`,
   `tests/bridge-guard.test.mjs`, `tests/media-extract.test.mjs`, `CLAUDE.md`. Heavily edited:
   `grok-companion.mjs`, `claude-companion.mjs`, `lib/state.mjs`, `README.md`.
 
 ## What this is
 
-A **two-way, local, OAuth-only bridge** between **Claude Code** and **Grok Build**, both
-installed and logged in on the **same machine**. No API keys — the bridge only ever shells
-the already-authenticated local `grok` / `claude` binaries in headless mode.
+**Pantheon** is a **local, OAuth-only delegation mesh** across three coding agents installed and
+logged in on the **same machine**: **Claude Code**, **Grok Build**, and **Codex**. No API keys —
+every leg only ever shells the already-authenticated local `claude` / `grok` / `codex` binaries in
+headless mode. The Claude↔Grok bridge is the most built-out surface; the Codex legs and the
+remaining directions share the same companions, ledger, and safety layer.
 
-- **Claude → Grok** (the rich surface): `/grok-imagine` hands off all image/video work to
-  Grok's Imagine models; `/grok-review` delegates multi-agent reviews. Installed as the
-  Claude Code plugin `grok@grok-plugin-cc`.
-- **Grok → Claude** (symmetric leg): the `claude-delegate` skill + `claude-second-opinion`
-  agent let Grok hand non-visual work back to the local Claude Code CLI.
+Six directions (see `docs/PANTHEON-OPTIMIZATION-PLAN.md` for the canonical routing spec):
+
+- **Claude → Grok** (rich surface): `/grok-imagine` hands all image/video work to Grok Imagine;
+  `/grok-review` delegates multi-agent reviews. Installed as the Claude Code plugin `grok@pantheon`.
+- **Grok → Claude**: `claude-delegate` skill + `claude-second-opinion` agent hand non-visual work
+  (architecture, reasoning, second opinions) back to the local Claude Code CLI.
+- **Grok ↔ Codex / Codex ↔ Claude / Claude → Codex**: implementation, build/test verification, and
+  cross-agent second opinions, routed through the same companions.
+
+`/grok:health --json --live` runs a real six-direction handshake (compute-challenge sentinels, so an
+echoed prompt or empty reply can never produce a false green).
 
 ## Repo layout
 
 ```
-.claude-plugin/marketplace.json      # local marketplace manifest (name: grok-plugin-cc)
+.claude-plugin/marketplace.json      # local marketplace manifest (name: pantheon)
 plugins/grok/
   .claude-plugin/plugin.json         # the installable plugin (name: grok); commands/agents auto-discovered
   commands/                          # slash commands: imagine, review, setup, status, result, cancel (.md)
@@ -47,7 +64,7 @@ plugins/grok/
   prompts/imagine-system.md
   scripts/
     grok-companion.mjs               # FORWARD leg (Claude→Grok). Main entry for imagine/review/task/status/result/cancel/setup
-    claude-companion.mjs             # REVERSE leg (Grok→Claude). Shells `claude --bare -p … --output-format json`
+    claude-companion.mjs             # REVERSE leg (Grok→Claude). Shells local-OAuth-safe `claude --model … -p … --output-format json`
     lib/
       bridge-guard.mjs               # SAFETY layer: loop guard, write gate, timeout, heartbeat
       state.mjs                      # canonical job ledger (single writer for BOTH directions)
@@ -70,9 +87,13 @@ into `~/.grok/sessions/<urlencoded-cwd>/<session>/{images,videos}/` → companio
 asset paths, **copies them into the gallery**, prints clean text + clickable links, records the job.
 
 **Reverse (`claude-delegate …` from Grok):** Grok skill shells
-`node …/claude-companion.mjs "task" [flags]` → `runClaudeHeadless` spawns
-`claude --bare -p <task> --output-format json [sanitized flags]` → result + cost + session_id
-recorded in the same ledger.
+`node …/claude-companion.mjs "task" [flags]` → `runClaudeHeadless` spawns local-OAuth-safe
+`claude --model claude-sonnet-4-6 -p <task> --output-format json --permission-mode plan [sanitized flags]`
+→ result + cost + session_id recorded in the same ledger. `--bare` is reserved for explicit API-key/settings auth.
+
+**Pantheon packets:** companions accept plain prompt strings by default. If the input is JSON with
+`pantheon_packet: true`, `lib/pantheon-packet.mjs` turns it into a structured handoff prompt and stores
+packet metadata in the ledger.
 
 ## Key conventions & invariants (do not break these)
 
@@ -111,7 +132,7 @@ recorded in the same ledger.
 - `sanitizeClaudeArgs(args)` — **write gate** (reverse leg). Unless `GROK_BRIDGE_ALLOW_WRITES=1`,
   strips `--dangerously-skip-permissions`, `--permission-mode bypassPermissions|acceptEdits`, and any
   caller `--allowedTools`, then pins read-only `Read,Glob,Grep`. Prevents Grok from silently driving
-  Claude with autonomous edits + Bash.
+  Claude with autonomous edits + Bash. Stripped unsafe flags are surfaced as `pantheon_warning`.
 - `armTimeout(child, reject, ms)` — SIGTERMs a hung child.
 - `startHeartbeat(label)` — elapsed ticks to **stderr** every 15s (never pollutes parsed stdout).
 
@@ -121,16 +142,17 @@ recorded in the same ledger.
 node --test tests/*.test.mjs        # unit tests (guard logic + media extraction)
 node --check plugins/grok/scripts/*.mjs   # syntax/parse check
 node plugins/grok/scripts/grok-companion.mjs setup   # live smoke (spawns grok)
+node plugins/grok/scripts/grok-companion.mjs health --json   # static Pantheon health
 ```
 
 ## Install (local, non-interactive)
 
 ```bash
 claude plugin validate .
-claude plugin marketplace add /Users/faadi/Code/grok-plugin-cc
-claude plugin install grok@grok-plugin-cc
+claude plugin marketplace add /Users/faadi/Code/Pantheon
+claude plugin install grok@pantheon
 # Grok side (reverse leg):
-grok plugin install /Users/faadi/Code/grok-plugin-cc --trust
+grok plugin install /Users/faadi/Code/Pantheon --trust
 ```
 Slash commands go live after a Claude Code session restart.
 
@@ -172,9 +194,7 @@ Claude session verified and added/fixed.
 `--yolo`→`--always-approve`; clean `.text` output; reverse leg symlinked into `~/.grok/`.
 
 **Still open (candidates for Grok / future work):**
-- Reverse leg (Grok→Claude): write gate + binary/skill presence confirmed live from a Grok session
-  (2026-06-07); the full headless `--bare -p` round-trip still needs a clean run (an auth hiccup hit
-  the isolated tool shell). Re-test and capture a returned result.
+- Broaden `/grok:health --live` into complete six-direction checks where every local companion is available.
 - True token-level streaming (`--output-format streaming-json`) if the heartbeat isn't enough.
 - Session reuse (`--continue` + stored `session_id`) so "edit the previous image" keeps context.
 - README/docs polish (the audit references some behavior that predates these fixes).

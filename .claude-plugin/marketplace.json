@@ -1,10 +1,10 @@
 {
-  "name": "grok-plugin-cc",
+  "name": "pantheon",
   "owner": {
     "name": "Fahd Akhtar"
   },
   "metadata": {
-    "description": "Two-way local OAuth-only bridge between Claude Code and Grok Build. Claude hands visual work (Grok Imagine) and multi-agent reviews to Grok; Grok can hand complementary tasks back.",
+    "description": "Pantheon: a local, OAuth-only delegation mesh that lets Claude Code, Grok Build, and Codex hand work to each other on one machine. No API keys. Claude routes visual work to Grok Imagine, any agent can ask another for a second opinion or implementation, with a loop guard and read-only-by-default write gate.",
     "version": "0.1.0"
   },
   "plugins": [

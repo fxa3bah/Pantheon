@@ -57,4 +57,4 @@ After generating the update, you can optionally `claude-delegate` non-visual fol
 
 This keeps the killer feature (Grok Imagine) in Grok's hands while making collaboration smooth.
 
-(Part of the grok-plugin-cc symmetric bridge. After installing the Grok side of the bridge, invoke with the skill name or natural language.)
+(Part of the Pantheon symmetric bridge. After installing the Grok side of the bridge, invoke with the skill name or natural language.)

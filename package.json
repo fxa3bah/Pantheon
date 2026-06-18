@@ -1,10 +1,18 @@
 {
-  "name": "grok-plugin-cc",
+  "name": "pantheon",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Two-way local OAuth-only bridge between Claude Code and Grok Build. Claude hands visual work (Grok Imagine) and multi-agent reviews to Grok; Grok can hand complementary tasks back. Same machine, existing auth, clean artifact handoff.",
+  "description": "Pantheon: a local, OAuth-only delegation mesh that lets Claude Code, Grok Build, and Codex hand work to each other on one machine. No API keys, no daemons. Claude routes visual work to Grok Imagine; any agent can ask another for a second opinion or implementation, behind a loop guard and a read-only-by-default write gate.",
   "license": "MIT",
+  "homepage": "https://github.com/fxa3bah/Pantheon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fxa3bah/Pantheon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fxa3bah/Pantheon/issues"
+  },
   "engines": {
     "node": ">=18.18.0"
   },

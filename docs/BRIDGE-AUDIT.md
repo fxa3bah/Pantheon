@@ -1,4 +1,4 @@
-# grok-plugin-cc — Bridge Audit & Fix Spec
+# Pantheon — Bridge Audit & Fix Spec
 
 Audited 2026-06-07 on the live machine (grok 0.2.22, claude at `~/.local/bin/claude`, node v24).
 This is a punch-list for Grok to implement. Each item: **current behavior → desired behavior → fix location**.
@@ -80,15 +80,15 @@ After `/grok-imagine ...` you get: a one-line clickable `file://` link + a markd
 ## 3. Two-way completeness (your Q3: "Grok reaches back to me too?")
 
 ### Current state: only half-wired
-- The Claude→Grok half is a real installed plugin (`grok@grok-plugin-cc`).
+- The Claude→Grok half is a real installed plugin (`grok@pantheon`).
 - The Grok→Claude half is **just files in the repo**. `~/.grok/skills/` has no `claude-delegate`; `~/.grok/agents/` has no `claude-second-opinion`. Nothing invokes `claude-companion.mjs`.
 
 ### To make it genuinely two-way
 1. **Install the Grok side.** Either:
-   - `grok plugin install /Users/faadi/Code/grok-plugin-cc --trust` (if grok's plugin system reads `skills/` + `agents/` at repo root), **or**
+   - `grok plugin install /Users/faadi/Code/Pantheon --trust` (if grok's plugin system reads `skills/` + `agents/` at repo root), **or**
    - symlink/copy `skills/claude-delegate/` → `~/.grok/skills/claude-delegate/` and `agents/claude-second-opinion.md` → `~/.grok/agents/claude-second-opinion.md`.
    - Verify with: a grok session can list `claude-delegate` as a skill.
-2. **Fix the path in the skill.** `claude-delegate/SKILL.md` references the companion as "in the bridge repo" without an absolute path. After install, `~/.grok/skills/claude-delegate/` won't contain `claude-companion.mjs` (that lives in `plugins/grok/scripts/`). Either copy the script alongside the skill or hardcode/env the absolute path `/Users/faadi/Code/grok-plugin-cc/plugins/grok/scripts/claude-companion.mjs`.
+2. **Fix the path in the skill.** `claude-delegate/SKILL.md` references the companion as "in the bridge repo" without an absolute path. After install, `~/.grok/skills/claude-delegate/` won't contain `claude-companion.mjs` (that lives in `plugins/grok/scripts/`). Either copy the script alongside the skill or hardcode/env the absolute path `/Users/faadi/Code/Pantheon/plugins/grok/scripts/claude-companion.mjs`.
 3. **Smoke test the reverse leg** end-to-end: from grok, "ask Claude Code to summarize X" → confirm `.grok-bridge/claude-*.json` is written and Claude's text comes back.
 
 ### Loop-guard (important for a symmetric bridge)

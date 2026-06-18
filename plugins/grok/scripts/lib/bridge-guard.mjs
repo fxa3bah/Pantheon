@@ -1,5 +1,5 @@
 // bridge-guard.mjs
-// Safety layer for the symmetric grok-plugin-cc bridge.
+// Safety layer for Pantheon.
 //
 // Three concerns, shared by both companions:
 //   1. Loop guard  — a hop counter that stops runaway Claude→Grok→Claude→… recursion.
@@ -9,8 +9,15 @@
 //
 // All functions are pure / return new values — process.env is never mutated.
 
-export const MAX_HOPS = Number(process.env.GROK_BRIDGE_MAX_HOPS || 2);
-export const DEFAULT_TIMEOUT_MS = Number(process.env.GROK_BRIDGE_TIMEOUT_MS || 5 * 60 * 1000);
+/** Parse a positive-number env var, falling back when missing/NaN/<=0. */
+function posNum(raw, fallback) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+// NaN/garbage must never silently disable the guard or zero the timeout.
+export const MAX_HOPS = posNum(process.env.GROK_BRIDGE_MAX_HOPS, 2);
+export const DEFAULT_TIMEOUT_MS = posNum(process.env.GROK_BRIDGE_TIMEOUT_MS, 5 * 60 * 1000);
 
 /** Current bridge depth (0 when invoked directly by a human). */
 export function currentHop() {
@@ -41,19 +48,36 @@ export function childEnv(extra = {}) {
 
 // ---- Write gate (reverse leg: Grok → Claude) -------------------------------
 
-const writesAllowed = () => process.env.GROK_BRIDGE_ALLOW_WRITES === '1';
+export const writesAllowed = () => process.env.GROK_BRIDGE_ALLOW_WRITES === '1';
 
 // Flags that hand Claude autonomous, prompt-free write/exec power.
 const DANGEROUS_FLAGS = new Set([
   '--dangerously-skip-permissions',
   '--dangerously-bypass-approvals-and-sandbox',
 ]);
-const UNSAFE_PERMISSION_MODES = new Set(['bypassPermissions', 'acceptEdits']);
+// Only these permission modes are safe for a non-human (Grok) delegator. Allowlist,
+// not denylist — anything unknown/future is rejected by default.
+const SAFE_PERMISSION_MODES = new Set(['default', 'plan']);
+
+/** Split a token into {name, value} handling both `--flag value` and `--flag=value`. */
+function splitFlag(tok) {
+  if (typeof tok === 'string' && tok.startsWith('--')) {
+    const eq = tok.indexOf('=');
+    if (eq !== -1) return { name: tok.slice(0, eq), value: tok.slice(eq + 1), joined: true };
+    return { name: tok, value: undefined, joined: false };
+  }
+  return { name: tok, value: undefined, joined: false };
+}
 
 /**
  * Filter caller-supplied Claude CLI flags. Unless GROK_BRIDGE_ALLOW_WRITES=1,
  * strip anything that would let Grok drive Claude with writes/exec and pin a
  * read-only tool set. Returns { args, gated, notes } — never mutates input.
+ *
+ * Hardened: matches dangerous flags by NAME regardless of `=`-joined vs spaced
+ * form, drops caller --allowedTools in both forms, and permits --permission-mode
+ * only for an explicit safe allowlist. (Fixes the bypass where
+ * `--permission-mode=bypassPermissions` was a single token that escaped matching.)
  */
 export function sanitizeClaudeArgs(extraArgs = []) {
   if (writesAllowed()) {
@@ -63,22 +87,31 @@ export function sanitizeClaudeArgs(extraArgs = []) {
   const out = [];
   const notes = [];
   for (let i = 0; i < extraArgs.length; i++) {
-    const a = extraArgs[i];
-    if (DANGEROUS_FLAGS.has(a)) {
-      notes.push(`stripped ${a}`);
+    const { name, value, joined } = splitFlag(extraArgs[i]);
+
+    if (DANGEROUS_FLAGS.has(name)) {
+      notes.push(`stripped ${name}`);
       continue;
     }
-    if (a === '--permission-mode' && UNSAFE_PERMISSION_MODES.has(extraArgs[i + 1])) {
-      notes.push(`stripped --permission-mode ${extraArgs[i + 1]}`);
-      i++; // skip its value
+
+    if (name === '--permission-mode') {
+      let mode = value;
+      if (!joined) { mode = extraArgs[i + 1]; i++; } // consume the value token either way
+      if (!SAFE_PERMISSION_MODES.has(mode)) {
+        notes.push(`stripped --permission-mode ${mode}`);
+        continue;
+      }
+      out.push('--permission-mode', mode);
       continue;
     }
-    if (a === '--allowedTools' || a === '--allowed-tools') {
-      notes.push(`stripped caller ${a} (read-only enforced)`);
-      i++; // drop caller's tool grant; we enforce our own below
+
+    if (name === '--allowedTools' || name === '--allowed-tools') {
+      if (!joined) i++; // also drop the separate value token
+      notes.push(`stripped caller ${name} (read-only enforced)`);
       continue;
     }
-    out.push(a);
+
+    out.push(extraArgs[i]);
   }
   // Pin a read-only tool set so a delegated task can inspect but not change the machine.
   out.unshift('--allowedTools', 'Read,Glob,Grep');

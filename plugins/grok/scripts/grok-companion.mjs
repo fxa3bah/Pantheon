@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * grok-companion.mjs
- * Thin bridge companion for the Claude Code side of grok-plugin-cc.
+ * Thin Pantheon companion for the Claude Code side of Pantheon.
  * Shells the local authenticated `grok` binary (headless) for /grok-imagine and /grok-review.
  * No API keys — only uses the already-logged-in local Grok CLI.
  *
@@ -17,8 +17,9 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop } from './lib/bridge-guard.mjs';
+import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, MAX_HOPS, writesAllowed } from './lib/bridge-guard.mjs';
 import { upsertJob, readJob, listJobs } from './lib/state.mjs';
+import { parsePantheonInput, packetJobFields, packetModel } from './lib/pantheon-packet.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -28,6 +29,8 @@ const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PLUGIN_ROOT = path.resolve(ROOT, '..'); // plugins/grok
 // Job ledger lives in cwd/.grok-bridge (managed by lib/state.mjs).
 const MEDIA_ROOT = process.env.GROK_BRIDGE_MEDIA_DIR || path.join(process.env.HOME || process.env.USERPROFILE || '', 'Pictures', 'grok-imagine');
+const DEFAULT_CLAUDE_MODEL = process.env.GROK_BRIDGE_CLAUDE_MODEL || 'claude-sonnet-4-6';
+const DEFAULT_CODEX_MODEL = process.env.GROK_BRIDGE_CODEX_MODEL || 'gpt-5.5';
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
@@ -70,6 +73,40 @@ function resolveGrokBinary() {
   }
 
   return null;
+}
+
+function resolveBinary(name, fallbacks = []) {
+  const which = process.platform === 'win32' ? 'where' : 'which';
+  const res = spawnSyncSafe(which, [name], { encoding: 'utf8' });
+  if (res.status === 0 && res.stdout && res.stdout.trim()) {
+    return res.stdout.trim().split(/\r?\n/)[0];
+  }
+  for (const candidate of fallbacks) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function resolvePreferredBinary(name, preferred = [], fallbacks = []) {
+  for (const candidate of preferred) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return resolveBinary(name, fallbacks);
+}
+
+function versionOf(bin, args = ['--version']) {
+  if (!bin) return { ok: false, error: 'not found' };
+  const res = spawnSyncSafe(bin, args, { encoding: 'utf8', timeout: 15000 });
+  return {
+    ok: res.status === 0,
+    status: res.status,
+    text: (res.stdout || res.stderr || '').trim()
+  };
+}
+
+function packetModelArgs(parsedInput) {
+  const model = packetModel(parsedInput?.packet);
+  return model ? ['--model', model] : [];
 }
 
 async function runGrokHeadless(prompt, { extraArgs = [], jobId, label = 'Grok' } = {}) {
@@ -178,8 +215,8 @@ async function cmdSetup(args) {
 
   // Quick smoke — trivial prompt
   try {
-    const { stdout } = await runGrokHeadless('Reply with exactly: GROK-BRIDGE-OK', { extraArgs: ['--max-turns', '1'], label: 'Grok setup' });
-    const ok = stdout.includes('GROK-BRIDGE-OK') || stdout.includes('GROK-BRIDGE');
+    const { stdout } = await runGrokHeadless('Reply with exactly: PANTHEON-BRIDGE-OK', { extraArgs: ['--max-turns', '1'], label: 'Grok setup' });
+    const ok = stdout.includes('PANTHEON-BRIDGE-OK') || stdout.includes('PANTHEON-BRIDGE');
     const result = {
       ok,
       binary: grokBin,
@@ -196,12 +233,14 @@ async function cmdSetup(args) {
 }
 
 async function cmdImagine(rawArgs) {
+  const parsedInput = parsePantheonInput(rawArgs);
+  const requestText = parsedInput.prompt || rawArgs;
   // rawArgs is the full user request string (including any --background etc. — companion receives the cleaned version from the .md)
   const prompt = [
-    'You are Grok. The user has handed off a visual task via the grok-plugin-cc bridge.',
+    'You are Grok. The user has handed off a visual task via Pantheon.',
     'Use your Imagine superpower (image_gen, image_edit, image_to_video, reference_to_video, reference consistency, ffmpeg assembly, etc.) exactly as described in your imagine skill.',
     'User request (preserve intent exactly):',
-    rawArgs,
+    requestText,
     '',
     'Materialize all final images and short videos.',
     'For EVERY asset you generate or edit, print a machine-parseable line exactly in this format (one per file, use the actual absolute path the file was saved to by the harness):',
@@ -215,11 +254,11 @@ async function cmdImagine(rawArgs) {
   const galleryDir = path.join(MEDIA_ROOT, date, jobId);
   ensureDir(galleryDir);
 
-  console.log(`[grok-bridge] Starting imagine job ${jobId}... (gallery: ${galleryDir})`);
-  saveJob(jobId, { type: 'imagine', request: rawArgs, status: 'running', gallery: galleryDir });
+  console.log(`[pantheon] Starting imagine job ${jobId}... (gallery: ${galleryDir})`);
+  saveJob(jobId, { type: 'imagine', request: rawArgs, status: 'running', gallery: galleryDir, ...packetJobFields(parsedInput) });
 
   try {
-    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok Imagine' });
+    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok Imagine', extraArgs: packetModelArgs(parsedInput) });
 
     // Decode JSON first: headless grok returns {text, thought, ...}. Asset paths
     // can appear in either field with REAL newlines; parsing the raw JSON string
@@ -265,13 +304,14 @@ async function cmdImagine(rawArgs) {
       media: finalMedia,
       gallery: galleryDir,
       cost,
+      ...packetJobFields(parsedInput),
       status: 'complete'
     });
 
     console.log(cleanText);
 
     if (finalMedia.length) {
-      console.log('\n[bridge] Generated media (copied to gallery — clickable file:// links + markdown):');
+      console.log('\n[pantheon] Generated media (copied to gallery — clickable file:// links + markdown):');
       finalMedia.forEach(p => {
         // pathToFileURL percent-encodes correctly (spaces, %, etc.) so the link
         // actually resolves when clicked. Gallery paths are clean (no %2F).
@@ -281,11 +321,11 @@ async function cmdImagine(rawArgs) {
         console.log(`  ${md}`);
       });
     } else {
-      console.log('\n[bridge] ⚠️ No media files were captured/copied. Grok may not have emitted BRIDGE_MEDIA lines; check /grok:result ' + jobId + ' --json.');
+      console.log('\n[pantheon] No media files were captured/copied. Grok may not have emitted BRIDGE_MEDIA lines; check /grok:result ' + jobId + ' --json.');
     }
 
-    if (cost != null) console.log(`[bridge] cost: $${Number(cost).toFixed(4)}`);
-    console.log(`\n[bridge] Job ${jobId} complete. Gallery: ${galleryDir}`);
+    if (cost != null) console.log(`[pantheon] cost: $${Number(cost).toFixed(4)}`);
+    console.log(`\n[pantheon] Job ${jobId} complete. Gallery: ${galleryDir}`);
     console.log(`Use /grok:result ${jobId} (or --json) later if needed.`);
   } catch (e) {
     saveJob(jobId, { status: 'failed', error: e.message });
@@ -295,28 +335,30 @@ async function cmdImagine(rawArgs) {
 }
 
 async function cmdReview(rawArgs) {
+  const parsedInput = parsePantheonInput(rawArgs);
+  const requestText = parsedInput.prompt || rawArgs;
   const prompt = [
     'You are Grok. Perform the following review/investigation using multiple agents and perspectives.',
     'At minimum use: reviewer, explorer/critic, security/reliability, implementer (or similar).',
     'You may spawn subagents or run best-of-n internally.',
     'Synthesize one clear, prioritized report with concrete findings and recommendations.',
     'User request / focus:',
-    rawArgs
+    requestText
   ].join('\n');
 
   const jobId = generateJobId();
-  console.log(`[grok-bridge] Starting multi-agent review job ${jobId}...`);
-  saveJob(jobId, { type: 'review', request: rawArgs, status: 'running' });
+  console.log(`[pantheon] Starting multi-agent review job ${jobId}...`);
+  saveJob(jobId, { type: 'review', request: rawArgs, status: 'running', ...packetJobFields(parsedInput) });
 
   try {
-    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok review' });
+    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok review', extraArgs: packetModelArgs(parsedInput) });
     // Clean output: prefer .text
     let clean = stdout, cost = null;
     try { const p = JSON.parse(stdout); if (p.text) clean = p.text; cost = extractCost(p); } catch {}
-    saveJob(jobId, { type: 'review', request: rawArgs, output: stdout, cost, status: 'complete' });
+    saveJob(jobId, { type: 'review', request: rawArgs, output: stdout, cost, status: 'complete', ...packetJobFields(parsedInput) });
     console.log(clean);
-    if (cost != null) console.log(`[bridge] cost: $${Number(cost).toFixed(4)}`);
-    console.log(`\n[bridge] Job ${jobId} complete.`);
+    if (cost != null) console.log(`[pantheon] cost: $${Number(cost).toFixed(4)}`);
+    console.log(`\n[pantheon] Job ${jobId} complete.`);
   } catch (e) {
     saveJob(jobId, { status: 'failed', error: e.message });
     console.error('Review job failed:', e.message);
@@ -325,21 +367,156 @@ async function cmdReview(rawArgs) {
 }
 
 async function cmdTask(rawArgs) {
+  const parsedInput = parsePantheonInput(rawArgs);
+  const requestText = parsedInput.prompt || rawArgs;
   // Generic delegation used by the subagent. The .md already added routing flags if needed.
   const jobId = generateJobId();
-  console.log(`[grok-bridge] Starting delegated task ${jobId}...`);
-  saveJob(jobId, { type: 'task', request: rawArgs, status: 'running' });
+  console.log(`[pantheon] Starting delegated task ${jobId}...`);
+  saveJob(jobId, { type: 'task', request: rawArgs, status: 'running', ...packetJobFields(parsedInput) });
   try {
-    const { stdout } = await runGrokHeadless(rawArgs, { jobId, label: 'Grok task' });
+    const { stdout } = await runGrokHeadless(requestText, { jobId, label: 'Grok task', extraArgs: packetModelArgs(parsedInput) });
     let clean = stdout, cost = null;
     try { const p = JSON.parse(stdout); if (p.text) clean = p.text; cost = extractCost(p); } catch {}
-    saveJob(jobId, { type: 'task', request: rawArgs, output: stdout, cost, status: 'complete' });
+    saveJob(jobId, { type: 'task', request: rawArgs, output: stdout, cost, status: 'complete', ...packetJobFields(parsedInput) });
     console.log(clean);
-    if (cost != null) console.log(`[bridge] cost: $${Number(cost).toFixed(4)}`);
+    if (cost != null) console.log(`[pantheon] cost: $${Number(cost).toFixed(4)}`);
   } catch (e) {
     saveJob(jobId, { status: 'failed', error: e.message });
     console.error('Task failed:', e.message);
     process.exit(1);
+  }
+}
+
+function runHealthHandshake(name, bin, args, expected) {
+  if (!bin) return { ok: false, skipped: true, error: `${name} binary not found` };
+  const res = spawnSyncSafe(bin, args, { encoding: 'utf8', timeout: 60000, cwd: process.cwd() });
+  const text = `${res.stdout || ''}\n${res.stderr || ''}`.trim();
+  return {
+    ok: res.status === 0 && text.includes(expected),
+    status: res.status,
+    expected,
+    text: text.slice(0, 1200)
+  };
+}
+
+function cmdHealth(args) {
+  const asJson = args.includes('--json');
+  const live = args.includes('--live');
+  const grokBin = resolveGrokBinary();
+  const claudeBin = resolveBinary('claude', [
+    path.join(process.env.HOME || '', '.local', 'bin', 'claude'),
+    path.join(process.env.HOME || '', '.claude', 'bin', 'claude'),
+    '/usr/local/bin/claude',
+    '/opt/homebrew/bin/claude',
+  ]);
+  const codexBin = resolvePreferredBinary('codex', [
+    process.env.CODEX_CLI_PATH,
+    '/Applications/Codex.app/Contents/Resources/codex',
+    path.join(process.env.HOME || '', '.nvm', 'versions', 'node', 'v24.13.0', 'bin', 'codex'),
+  ], [
+    path.join(process.env.HOME || '', '.local', 'bin', 'codex'),
+    '/usr/local/bin/codex',
+    '/opt/homebrew/bin/codex',
+  ]);
+
+  const report = {
+    ok: true,
+    timestamp: new Date().toISOString(),
+    cwd: process.cwd(),
+    pantheon: {
+      hop: currentHop(),
+      maxHops: MAX_HOPS,
+      writesAllowed: writesAllowed(),
+      claudeBareRequested: process.env.GROK_BRIDGE_CLAUDE_BARE === '1'
+    },
+    models: {
+      grok: 'grok-build (local CLI default)',
+      claude: DEFAULT_CLAUDE_MODEL,
+      codex: DEFAULT_CODEX_MODEL
+    },
+    binaries: {
+      grok: { path: grokBin, version: versionOf(grokBin) },
+      claude: { path: claudeBin, version: versionOf(claudeBin) },
+      codex: { path: codexBin, version: versionOf(codexBin) }
+    },
+    legs: {
+      'claude-to-grok': { configured: Boolean(grokBin), command: '/grok-imagine, /grok-review, /grok:setup' },
+      'grok-to-claude': { configured: Boolean(claudeBin), command: 'claude-delegate via claude-companion.mjs' },
+      'grok-to-codex': { configured: Boolean(codexBin), command: 'codex-delegate / codex companion' },
+      'codex-to-grok': { configured: Boolean(grokBin), command: 'grok "..." or grok-delegate skill' },
+      'codex-to-claude': { configured: Boolean(claudeBin), command: 'claude "..." or claude-delegate skill' },
+      'claude-to-codex': { configured: Boolean(codexBin), command: 'codex "..." or Codex plugin' }
+    },
+    live: {}
+  };
+
+  if (live) {
+    const claudeCompanion = path.join(ROOT, 'scripts', 'claude-companion.mjs');
+    // Compute-challenge sentinels. The expected token embeds a number the model
+    // must CALCULATE (6 * 7 = 42), so the echoed instruction can never contain
+    // the answer. Only a genuine reply produces the matched string -- this
+    // defeats the false-positive where a CLI that merely echoes the prompt (or
+    // returns empty) would otherwise pass on the instruction text alone.
+    const CHALLENGE = 'where N is the product of 6 and 7';
+    const grokExpect = 'PANTHEON-GROK-42';
+    const claudeExpect = 'PANTHEON-CLAUDE-42';
+    const codexExpect = 'PANTHEON-CODEX-42';
+    const grokHandshake = [
+      '-p', `Pantheon health check. Reply with exactly PANTHEON-GROK-N ${CHALLENGE}.`,
+      '--output-format', 'json',
+      '--cwd', process.cwd(),
+      '--permission-mode', 'plan',
+      '--max-turns', '2',
+      '--no-subagents',
+      '--disable-web-search'
+    ];
+    const claudeHandshake = [
+      '--model', DEFAULT_CLAUDE_MODEL,
+      '-p', `Pantheon health check. Reply with exactly PANTHEON-CLAUDE-N ${CHALLENGE}.`,
+      '--output-format', 'json',
+      '--permission-mode', 'plan',
+      '--allowedTools', 'Read,Glob,Grep',
+      '--max-budget-usd', '0.75'
+    ];
+    const codexHandshake = [
+      'exec',
+      '--model', DEFAULT_CODEX_MODEL,
+      '--sandbox', 'read-only',
+      '--ephemeral',
+      '--skip-git-repo-check',
+      '-C', process.cwd(),
+      `Pantheon health check. Reply with exactly PANTHEON-CODEX-N ${CHALLENGE}.`
+    ];
+
+    report.live['claude-to-grok'] = runHealthHandshake('claude-to-grok', grokBin, grokHandshake, grokExpect);
+    report.live['grok-to-claude'] = runHealthHandshake('grok-to-claude', process.execPath, [
+      claudeCompanion,
+      `Pantheon health check. Reply with exactly PANTHEON-CLAUDE-N ${CHALLENGE}.`,
+      '--max-turns', '1'
+    ], claudeExpect);
+    report.live['grok-to-codex'] = runHealthHandshake('grok-to-codex', codexBin, codexHandshake, codexExpect);
+    report.live['codex-to-grok'] = runHealthHandshake('codex-to-grok', grokBin, grokHandshake, grokExpect);
+    report.live['codex-to-claude'] = runHealthHandshake('codex-to-claude', claudeBin, claudeHandshake, claudeExpect);
+    report.live['claude-to-codex'] = runHealthHandshake('claude-to-codex', codexBin, codexHandshake, codexExpect);
+    report.ok = Object.values(report.live).every(item => item.ok || item.skipped);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  console.log(`Pantheon health: ${report.ok ? 'ok' : 'attention needed'}`);
+  console.log(`hop ${report.pantheon.hop}/${report.pantheon.maxHops}; writes ${report.pantheon.writesAllowed ? 'allowed' : 'read-only default'}`);
+  for (const [name, info] of Object.entries(report.binaries)) {
+    console.log(`${name}: ${info.path || 'not found'}${info.version?.text ? ` (${info.version.text})` : ''}`);
+  }
+  if (live) {
+    for (const [name, result] of Object.entries(report.live)) {
+      console.log(`${name} live: ${result.ok ? 'ok' : 'failed'}`);
+    }
+  } else {
+    console.log('Run with --live for paid/read-only handshake checks.');
   }
 }
 
@@ -420,18 +597,18 @@ function cmdCancel(args) {
   const job = loadJob(id);
   if (!job) { console.log('Job not found:', id); return; }
   if (!job.pid) {
-    console.log(`[bridge] Job ${id} has no tracked PID (already finished or never spawned). Status: ${job.status || 'unknown'}.`);
+    console.log(`[pantheon] Job ${id} has no tracked PID (already finished or never spawned). Status: ${job.status || 'unknown'}.`);
     return;
   }
   try {
     process.kill(job.pid, 'SIGTERM');
     saveJob(id, { status: 'cancelled' });
-    console.log(`[bridge] Sent SIGTERM to PID ${job.pid} for job ${id}. Marked cancelled.`);
+    console.log(`[pantheon] Sent SIGTERM to PID ${job.pid} for job ${id}. Marked cancelled.`);
   } catch (e) {
     // ESRCH = process already gone.
     const note = e.code === 'ESRCH' ? 'process already exited' : e.message;
     saveJob(id, { status: 'cancelled' });
-    console.log(`[bridge] Could not signal PID ${job.pid} (${note}). Marked ${id} cancelled.`);
+    console.log(`[pantheon] Could not signal PID ${job.pid} (${note}). Marked ${id} cancelled.`);
   }
 }
 
@@ -447,9 +624,10 @@ async function main() {
     case 'status': return cmdStatus(rest);
     case 'result': return cmdResult(rest);
     case 'cancel': return cmdCancel(rest);
+    case 'health': return cmdHealth(rest);
     default:
-      console.log('grok-companion (grok-plugin-cc bridge)');
-      console.log('  setup | imagine <request> | review <request> | task <request> | status [id] | result [id] | cancel [id]');
+      console.log('grok-companion (Pantheon bridge)');
+      console.log('  setup | health [--json] [--live] | imagine <request> | review <request> | task <request> | status [id] | result [id] | cancel [id]');
       process.exit(1);
   }
 }

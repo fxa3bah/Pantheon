@@ -54,3 +54,55 @@ test('write gate passes flags through when opted in', async () => {
   assert.equal(gated, false);
   assert.deepEqual(args, input);
 });
+
+// --- Bypass-class coverage (regression for the C1 write-gate hole) ----------
+
+// No dangerous token may survive in the FINAL assembled argv, in any flag form.
+const DANGEROUS_SUBSTRINGS = ['bypassPermissions', 'acceptEdits', 'Edit', 'Bash',
+  'dangerously-skip-permissions', 'dangerously-bypass-approvals-and-sandbox'];
+
+function assertClean(args) {
+  const joined = args.join(' ');
+  for (const bad of DANGEROUS_SUBSTRINGS) {
+    assert.ok(!joined.includes(bad), `dangerous token "${bad}" survived in: ${joined}`);
+  }
+  // read-only set is always pinned exactly once at the front
+  assert.ok(joined.includes('--allowedTools Read,Glob,Grep'), `read-only not pinned: ${joined}`);
+}
+
+const BYPASS_INPUTS = [
+  ['--permission-mode=bypassPermissions'],
+  ['--permission-mode=acceptEdits'],
+  ['--allowedTools=Read,Edit,Bash'],
+  ['--allowed-tools=Bash'],
+  ['--permission-mode', 'bypassPermissions'],
+  ['--allowedTools', 'Read,Edit,Bash'],
+  ['--dangerously-skip-permissions'],
+  ['--dangerously-bypass-approvals-and-sandbox'],
+  // duplicate / mixed forms — attacker tries to slip a second grant past the pin
+  ['--allowedTools', 'Read,Glob,Grep', '--allowedTools=Read,Edit,Bash'],
+  ['--permission-mode=default', '--permission-mode=bypassPermissions'],
+];
+
+for (const input of BYPASS_INPUTS) {
+  test(`write gate blocks bypass: ${input.join(' ')}`, async () => {
+    const g = await freshLoad({});
+    const { args, gated } = g.sanitizeClaudeArgs(input);
+    assert.equal(gated, true);
+    assertClean(args);
+  });
+}
+
+test('write gate allows safe --permission-mode values (allowlist)', async () => {
+  const g = await freshLoad({});
+  for (const safe of ['default', 'plan']) {
+    const { args } = g.sanitizeClaudeArgs([`--permission-mode=${safe}`]);
+    assert.ok(args.includes('--permission-mode') && args.includes(safe));
+  }
+});
+
+test('loop guard is NOT disabled by garbage MAX_HOPS (NaN guard)', async () => {
+  const g = await freshLoad({ BRIDGE_HOP: '5', GROK_BRIDGE_MAX_HOPS: 'abc' });
+  assert.equal(g.MAX_HOPS, 2); // falls back, not NaN
+  assert.throws(() => g.assertHopAllowed('hand off'), /Loop guard tripped/);
+});

@@ -36,7 +36,9 @@ From Grok:
 - "claude-delegate review the marketing page code that will consume the images I just created for performance and accessibility"
 - "claude-delegate draft the launch email copy that references the new assets, keeping the tone premium and minimal"
 
-The reverse companion runs `claude --bare -p "..." --output-format json` (official recommended headless form from the Claude Code CLI docs).
+The reverse companion runs local-OAuth-safe Claude headless mode:
+`claude --model claude-sonnet-4-6 -p "..." --output-format json --permission-mode plan`.
+`--bare` is reserved for explicit API-key/settings auth because it skips keychain/OAuth reads.
 
 Claude's output and any files it creates are captured and handed back to Grok with clear provenance.
 
@@ -93,7 +95,7 @@ This is where the symmetry shines: Grok brings search + Imagine + multi-agent th
 
 ### General Bridge Hygiene
 - Use `--background` for anything that might take time (complex video, multi-agent review).
-- On the reverse (Grok → Claude): Prefer `--bare` + explicit `--allowedTools` or `--permission-mode` so the delegation is fast and controlled.
+- On the reverse (Grok → Claude): Prefer local OAuth mode with `--permission-mode plan`; write/edit permissions require explicit `GROK_BRIDGE_ALLOW_WRITES=1`.
 - Job tracking: Use `/grok:status` and `/grok:result` (Claude side) or equivalent on Grok side so you can resume or inspect previous hand-offs.
 - No API keys: Everything routes through the local authenticated binaries. If either CLI complains about auth, run the native login command in a terminal on the same machine.
 - Permission modes: For pure creative visual hand-offs, you can be looser. For code that touches the filesystem, be explicit with allowed tools.
@@ -120,15 +122,15 @@ This is the "surprise" that makes the bridge feel alive: you're not just proxyin
 - Node.js 18+ (for the Claude plugin scripts).
 
 ### Local Development & Testing (Recommended Flow)
-1. Clone or have the repo at `/Users/faadi/Code/grok-plugin-cc` (or your equivalent).
+1. Clone or have the repo at `/Users/faadi/Code/Pantheon` (or your equivalent).
 2. **Claude side test**:
-   - In a Claude Code session: `claude --plugin-dir /path/to/grok-plugin-cc/plugins/grok`
+   - In a Claude Code session: `claude --plugin-dir /path/to/Pantheon/plugins/grok`
    - `/reload-plugins`
    - `/grok:setup` — should find your local grok binary via OAuth, no key prompt.
    - Run the star commands (see examples above).
    - Check that images/videos appear in the workspace with usable markdown.
 3. **Grok side test**:
-   - `grok plugin install /path/to/grok-plugin-cc --trust` (or the skills-dir equivalent).
+   - `grok plugin install /path/to/Pantheon --trust` (or the skills-dir equivalent).
    - Invoke `claude-delegate "simple test task"`.
    - Invoke the new `grok-imagine-from-claude-feedback` skill with sample feedback.
 4. Shell-level companion tests:
@@ -139,13 +141,13 @@ This is the "surprise" that makes the bridge feel alive: you're not just proxyin
 5. For real mixed testing: Start a feature in Claude, hand visuals to Grok, switch sessions, iterate with the feedback skill, hand code back.
 
 ### Publishing (so others / your other machines can use it)
-1. Push the repo to GitHub (recommended name: `grok-plugin-cc` or `grok-build-bridge`).
+1. Push the repo to GitHub (recommended name: `Pantheon` or `grok-build-bridge`).
 2. For Claude Code users:
-   - `/plugin marketplace add <your-org-or-username>/grok-plugin-cc`
-   - `/plugin install grok@grok-plugin-cc`
+   - `/plugin marketplace add <your-org-or-username>/Pantheon`
+   - `/plugin install grok@pantheon`
 3. For Grok Build users:
-   - `grok plugin marketplace add <your-org-or-username>/grok-plugin-cc`
-   - `grok plugin install grok-plugin-cc`
+   - `grok plugin marketplace add <your-org-or-username>/Pantheon`
+   - `grok plugin install Pantheon`
 4. Test the full flow on a clean machine (auth only, no local paths).
 
 ### Extending the Bridge
@@ -194,7 +196,7 @@ See the main README for the full "Best Practices & the 'Ask Grok Brilliance' Sur
 - Keep pure visual work in Grok. Use the feedback-to-imagine skill to translate Claude comments into Grok-native prompts.
 - Explicit references + "ask Grok to use its full brilliance" language unlocks the best results.
 - Shared `grok-media/` + job tracking makes the hand-off reliable in both directions.
-- `--bare` on the Claude CLI side for the reverse leg is the documented best practice for scripts/bridges.
+- Non-bare Claude CLI mode is the default for local OAuth on this Mac; `--bare` is only for API-key/settings-authenticated bridge runs.
 
 ## How to Implement / Set Up This Project
 
@@ -205,7 +207,7 @@ See the main README for the full "Best Practices & the 'Ask Grok Brilliance' Sur
 
 **Quick Local Test (Claude side)**
 ```bash
-claude --plugin-dir /path/to/grok-plugin-cc/plugins/grok
+claude --plugin-dir /path/to/Pantheon/plugins/grok
 /reload-plugins
 /grok:setup
 /grok-imagine a simple red square icon on white, 1:1
@@ -215,7 +217,7 @@ Verify the image file + markdown appear in the workspace.
 
 **Quick Local Test (Grok side)**
 ```bash
-grok plugin install /path/to/grok-plugin-cc --trust
+grok plugin install /path/to/Pantheon --trust
 ```
 Then in a Grok session:
 - `claude-delegate "write a short summary of the current directory"`
@@ -233,8 +235,8 @@ Then in a Grok session:
 
 **Publishing**
 - Push to GitHub.
-- Claude users: `/plugin marketplace add yourname/grok-plugin-cc` then install.
-- Grok users: `grok plugin marketplace add yourname/grok-plugin-cc` then install.
+- Claude users: `/plugin marketplace add yourname/Pantheon` then install.
+- Grok users: `grok plugin marketplace add yourname/Pantheon` then install.
 - The README + this doc are written so a new user can get the symmetric image-first bridge running in minutes.
 
 **Extending**

@@ -1,6 +1,6 @@
 ---
 name: claude-delegate
-description: Delegate complementary tasks (reasoning, second opinions, certain code or tool work where Claude Code has strong context) to the local authenticated Claude Code CLI (https://code.claude.com/docs/en/cli-reference). Results (including any files) come back cleanly into the Grok workspace. Part of the symmetric two-way grok-plugin-cc bridge.
+description: Delegate complementary tasks (reasoning, second opinions, certain code or tool work where Claude Code has strong context) to the local authenticated Claude Code CLI (https://code.claude.com/docs/en/cli-reference). Results (including any files) come back cleanly into the Grok workspace. Part of Pantheon (three direct bidirectional legs: Grok↔Codex, Codex↔Claude, Grok↔Claude).
 user_invocable: true
 ---
 
@@ -18,11 +18,11 @@ Use this skill to hand work **to the local Claude Code CLI** on the same machine
 
 ## How the reverse bridge works
 - This skill calls the small `claude-companion.mjs` (in the bridge repo).
-- The companion runs the official headless mode:
+- The companion runs local-OAuth-safe Claude headless mode:
   ```bash
-  claude --bare -p "your task..." --output-format json
+  claude --model claude-sonnet-4-6 -p "your task..." --output-format json --permission-mode plan
   ```
-- `--bare` is recommended by the Claude Code docs for scripts/bridges (skips loading random local plugins, skills, hooks, MCP for speed and determinism).
+- `--bare` is only used when API-key/settings auth is explicitly configured. Bare mode skips keychain/OAuth reads on this Mac.
 - Results + any files Claude wrote are captured in `.grok-bridge/` and surfaced back to you with clear local paths and provenance.
 - Same workspace means Claude's output is immediately usable by you.
 
@@ -34,14 +34,17 @@ Just describe the task naturally:
 - `delegate the pure data modeling and query work to Claude Code`
 - `claude-delegate continue the previous review and focus on error handling`
 
-You can also pass extra CLI flags that the companion will forward (advanced):
+You can also pass benign extra CLI flags that the companion will forward (advanced), such as `--model` or `--max-turns`.
 
-- Use permission controls when you want Claude to make edits without asking: `--permission-mode bypassPermissions` or `--allowedTools "Read,Edit,Bash"`
+Write/edit mode is not enabled by CLI flags. The operator must explicitly set `GROK_BRIDGE_ALLOW_WRITES=1`; otherwise the companion enforces read-only tools and strips unsafe permission grants.
 
 ## Important notes
 - **No API keys** — uses the machine's already-authenticated Claude Code (`claude auth login` / `claude auth status`).
 - Visual work stays with Grok (Imagine models + your skill).
-- This is the Grok → Claude half of the two-way bridge. The Claude → Grok half exposes `/grok-imagine` and `/grok-review` as slash commands in Claude Code.
+- This is the Grok → Claude leg of Pantheon. Pantheon has three direct bidirectional legs (Grok↔Codex, Codex↔Claude, Grok↔Claude). The reverse on this leg (Claude → Grok) exposes `/grok-imagine`, `/grok-review`, etc. Codex side uses its own companions/skills for its legs.
+- For the canonical routing and safety policy, see `docs/PANTHEON-OPTIMIZATION-PLAN.md` in the bridge repo.
 - After installing the bridge as a Grok plugin, this skill becomes available (namespaced if needed).
 
-(Implementation: `skills/claude-delegate/SKILL.md` + absolute path to `plugins/grok/scripts/claude-companion.mjs` in the grok-plugin-cc repo. After `grok plugin install` the skill is available.)
+See full patterns: ~/.grok/PANTHEON.md and the canonical `docs/PANTHEON-OPTIMIZATION-PLAN.md` in the bridge repo.
+
+(Implementation: `skills/claude-delegate/SKILL.md` + companion. The system is called Pantheon.)
