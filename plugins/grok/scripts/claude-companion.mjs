@@ -7,7 +7,7 @@
  * this shells the authenticated `claude` binary using its official headless mode.
  *
  * Recommended invocation for this local OAuth bridge:
- *   claude --model claude-sonnet-4-6 -p "task..." --output-format json --permission-mode plan
+ *   claude --model claude-opus-4-8 -p "task..." --output-format json --permission-mode plan
  *
  * Key flags supported:
  * - --bare : Only when API-key/settings auth is explicitly configured. Bare mode skips keychain/OAuth.
@@ -25,14 +25,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { assertHopAllowed, childEnv, armTimeout, sanitizeClaudeArgs, startHeartbeat, currentHop } from './lib/bridge-guard.mjs';
-import { parsePantheonInput, packetJobFields, packetModel } from './lib/pantheon-packet.mjs';
+import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
+import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.mjs';
 
 function generateJobId() {
   return 'claude-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-const DEFAULT_CLAUDE_MODEL = process.env.GROK_BRIDGE_CLAUDE_MODEL || 'claude-sonnet-4-6';
 const VALUE_FLAGS = new Set([
   '--allowedTools',
   '--allowed-tools',
@@ -153,8 +153,8 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
   }
   if (notes.length) console.error('[pantheon] permission gate:', notes.join('; '));
 
-  const model = options.model || DEFAULT_CLAUDE_MODEL;
-  const modelArgs = hasFlag(safeExtra, '--model') ? [] : ['--model', model];
+  const routed = options.routed;
+  const modelArgs = hasFlag(safeExtra, '--model') ? [] : (routed?.args ?? []);
   const permissionArgs = hasFlag(safeExtra, '--permission-mode') ? [] : ['--permission-mode', 'plan'];
 
   // Base flags for local OAuth bridge delegation. `--bare` is only safe when
@@ -186,7 +186,7 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
     child.on('close', (code) => {
       stopBeat();
       if (code === 0) {
-        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code, notes, model, bare: useBare });
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code, notes, model: routed?.model ?? null, bare: useBare });
       } else {
         reject(new Error(`claude exited with code ${code}\nstdout: ${stdout}\nstderr: ${stderr}`));
       }
@@ -198,18 +198,29 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
 
 // Persistence delegated to the shared ledger (lib/state.mjs); direction tags
 // this leg so a unified `/grok:status` can show both directions.
-const saveJob = (jobId, data) => upsertJob(jobId, { direction: 'grok-to-claude', ...data });
+const saveJob = (jobId, direction, data) => upsertJob(jobId, { direction, ...data });
 
 export async function delegateToClaude(request, extraCliArgs = []) {
   const jobId = generateJobId();
   console.log(`[pantheon] Delegating to local Claude Code CLI (job ${jobId})...`);
   const parsedInput = parsePantheonInput(request);
   const prompt = parsedInput.prompt;
-  const requestedModel = packetModel(parsedInput.packet);
-  saveJob(jobId, { type: 'claude-delegate', request, status: 'running', ...packetJobFields(parsedInput) });
+  const packet = parsedInput.packet;
+  const direction = packet && ROUTING_TABLE[`${packet.from}-to-${packet.to}`]
+    ? `${packet.from}-to-${packet.to}`
+    : 'grok-to-claude';
+  const taskClass = classifyTask(direction, 'task', packet);
+  const routed = resolveModel({ direction, taskClass, packet, contextChars: prompt.length });
+  const routingFields = {
+    model: routed.model,
+    effort: routed.effort ?? null,
+    bestOfN: routed.bestOfN ?? null,
+    routing: { taskClass: routed.taskClass, source: routed.source, escalated: routed.escalated }
+  };
+  saveJob(jobId, direction, { type: 'claude-delegate', request, status: 'running', ...routingFields, ...packetJobFields(parsedInput) });
 
   try {
-    const { stdout, notes, model, bare } = await runClaudeHeadless(prompt, extraCliArgs, jobId, { model: requestedModel });
+    const { stdout, notes, model, bare } = await runClaudeHeadless(prompt, extraCliArgs, jobId, { routed });
     let parsed;
     try {
       parsed = JSON.parse(stdout);
@@ -223,7 +234,7 @@ export async function delegateToClaude(request, extraCliArgs = []) {
       note.includes('read-only enforced')
     );
     const pantheon_warning = warningNotes.length ? warningNotes.join('; ') : null;
-    saveJob(jobId, {
+    saveJob(jobId, direction, {
       type: 'claude-delegate',
       request,
       extraCliArgs,
@@ -233,6 +244,7 @@ export async function delegateToClaude(request, extraCliArgs = []) {
       cost: parsed.total_cost_usd || null,
       model,
       bare,
+      ...routingFields,
       pantheon_warning,
       ...packetJobFields(parsedInput),
       status: 'complete'
@@ -246,7 +258,7 @@ export async function delegateToClaude(request, extraCliArgs = []) {
       raw: stdout
     };
   } catch (e) {
-    saveJob(jobId, { status: 'failed', error: e.message });
+    saveJob(jobId, direction, { status: 'failed', error: e.message });
     console.error('[pantheon] Claude delegate failed:', e.message);
     throw e;
   }
@@ -257,8 +269,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const { request, extra } = splitRequestAndExtra(process.argv.slice(2));
 
   if (!request) {
-    console.log('Usage: node claude-companion.mjs "task for Claude" [--model claude-sonnet-4-6 --permission-mode plan]');
-    console.log('Default bridge mode uses local OAuth/keychain auth: claude --model claude-sonnet-4-6 -p ... --output-format json --permission-mode plan');
+    console.log('Usage: node claude-companion.mjs "task for Claude" [--model claude-opus-4-8 --permission-mode plan]');
+    console.log('Default bridge mode uses local OAuth/keychain auth: claude --model claude-opus-4-8 -p ... --output-format json --permission-mode plan');
     process.exit(1);
   }
 

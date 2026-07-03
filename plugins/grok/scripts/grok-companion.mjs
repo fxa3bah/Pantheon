@@ -19,7 +19,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, MAX_HOPS, writesAllowed } from './lib/bridge-guard.mjs';
 import { upsertJob, readJob, listJobs } from './lib/state.mjs';
-import { parsePantheonInput, packetJobFields, packetModel } from './lib/pantheon-packet.mjs';
+import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
+import { resolveModel, classifyTask, MODEL_TIERS, ROUTING_TABLE } from './lib/model-routing.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -29,8 +30,6 @@ const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PLUGIN_ROOT = path.resolve(ROOT, '..'); // plugins/grok
 // Job ledger lives in cwd/.grok-bridge (managed by lib/state.mjs).
 const MEDIA_ROOT = process.env.GROK_BRIDGE_MEDIA_DIR || path.join(process.env.HOME || process.env.USERPROFILE || '', 'Pictures', 'grok-imagine');
-const DEFAULT_CLAUDE_MODEL = process.env.GROK_BRIDGE_CLAUDE_MODEL || 'claude-sonnet-4-6';
-const DEFAULT_CODEX_MODEL = process.env.GROK_BRIDGE_CODEX_MODEL || 'gpt-5.5';
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
@@ -104,9 +103,22 @@ function versionOf(bin, args = ['--version']) {
   };
 }
 
-function packetModelArgs(parsedInput) {
-  const model = packetModel(parsedInput?.packet);
-  return model ? ['--model', model] : [];
+// Resolves the direction for a packet-bearing (or plain) request, validated
+// against ROUTING_TABLE, falling back to this leg's legacy default direction.
+function directionFor(packet, fallback = 'claude-to-grok') {
+  if (packet && ROUTING_TABLE[`${packet.from}-to-${packet.to}`]) return `${packet.from}-to-${packet.to}`;
+  return fallback;
+}
+
+// Bundles the ledger-facing fields for a resolveModel() result so every
+// saveJob call carries the same routing shape.
+function routingFieldsFor(routed) {
+  return {
+    model: routed.model,
+    effort: routed.effort ?? null,
+    bestOfN: routed.bestOfN ?? null,
+    routing: { taskClass: routed.taskClass, source: routed.source, escalated: routed.escalated }
+  };
 }
 
 async function runGrokHeadless(prompt, { extraArgs = [], jobId, label = 'Grok' } = {}) {
@@ -164,7 +176,7 @@ function extractCost(parsed) {
 
 // Job persistence is delegated to the shared ledger (lib/state.mjs) so both
 // directions of the bridge write one consistent schema.
-const saveJob = (jobId, data) => upsertJob(jobId, { direction: 'claude-to-grok', ...data });
+const saveJob = (jobId, direction, data) => upsertJob(jobId, { direction, ...data });
 const loadJob = (jobId) => readJob(jobId);
 const listRecentJobs = (limit = 5) => listJobs(limit);
 
@@ -249,16 +261,21 @@ async function cmdImagine(rawArgs) {
     'If references are mentioned by path or "previous", use them.'
   ].join('\n');
 
+  const direction = directionFor(parsedInput.packet);
+  const taskClass = classifyTask(direction, 'imagine', parsedInput.packet);
+  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: prompt.length });
+  const routingFields = routingFieldsFor(routed);
+
   const jobId = generateJobId();
   const date = new Date().toISOString().slice(0, 10);
   const galleryDir = path.join(MEDIA_ROOT, date, jobId);
   ensureDir(galleryDir);
 
   console.log(`[pantheon] Starting imagine job ${jobId}... (gallery: ${galleryDir})`);
-  saveJob(jobId, { type: 'imagine', request: rawArgs, status: 'running', gallery: galleryDir, ...packetJobFields(parsedInput) });
+  saveJob(jobId, direction, { type: 'imagine', request: rawArgs, status: 'running', gallery: galleryDir, ...routingFields, ...packetJobFields(parsedInput) });
 
   try {
-    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok Imagine', extraArgs: packetModelArgs(parsedInput) });
+    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok Imagine', extraArgs: routed.args });
 
     // Decode JSON first: headless grok returns {text, thought, ...}. Asset paths
     // can appear in either field with REAL newlines; parsing the raw JSON string
@@ -297,13 +314,14 @@ async function cmdImagine(rawArgs) {
 
     let cost = null;
     try { cost = extractCost(JSON.parse(stdout)); } catch {}
-    saveJob(jobId, {
+    saveJob(jobId, direction, {
       type: 'imagine',
       request: rawArgs,
       output: stdout,
       media: finalMedia,
       gallery: galleryDir,
       cost,
+      ...routingFields,
       ...packetJobFields(parsedInput),
       status: 'complete'
     });
@@ -328,7 +346,7 @@ async function cmdImagine(rawArgs) {
     console.log(`\n[pantheon] Job ${jobId} complete. Gallery: ${galleryDir}`);
     console.log(`Use /grok:result ${jobId} (or --json) later if needed.`);
   } catch (e) {
-    saveJob(jobId, { status: 'failed', error: e.message });
+    saveJob(jobId, direction, { status: 'failed', error: e.message });
     console.error('Imagine job failed:', e.message);
     process.exit(1);
   }
@@ -346,21 +364,26 @@ async function cmdReview(rawArgs) {
     requestText
   ].join('\n');
 
+  const direction = directionFor(parsedInput.packet);
+  const taskClass = classifyTask(direction, 'review', parsedInput.packet);
+  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: prompt.length });
+  const routingFields = routingFieldsFor(routed);
+
   const jobId = generateJobId();
   console.log(`[pantheon] Starting multi-agent review job ${jobId}...`);
-  saveJob(jobId, { type: 'review', request: rawArgs, status: 'running', ...packetJobFields(parsedInput) });
+  saveJob(jobId, direction, { type: 'review', request: rawArgs, status: 'running', ...routingFields, ...packetJobFields(parsedInput) });
 
   try {
-    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok review', extraArgs: packetModelArgs(parsedInput) });
+    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok review', extraArgs: routed.args });
     // Clean output: prefer .text
     let clean = stdout, cost = null;
     try { const p = JSON.parse(stdout); if (p.text) clean = p.text; cost = extractCost(p); } catch {}
-    saveJob(jobId, { type: 'review', request: rawArgs, output: stdout, cost, status: 'complete', ...packetJobFields(parsedInput) });
+    saveJob(jobId, direction, { type: 'review', request: rawArgs, output: stdout, cost, status: 'complete', ...routingFields, ...packetJobFields(parsedInput) });
     console.log(clean);
     if (cost != null) console.log(`[pantheon] cost: $${Number(cost).toFixed(4)}`);
     console.log(`\n[pantheon] Job ${jobId} complete.`);
   } catch (e) {
-    saveJob(jobId, { status: 'failed', error: e.message });
+    saveJob(jobId, direction, { status: 'failed', error: e.message });
     console.error('Review job failed:', e.message);
     process.exit(1);
   }
@@ -370,18 +393,23 @@ async function cmdTask(rawArgs) {
   const parsedInput = parsePantheonInput(rawArgs);
   const requestText = parsedInput.prompt || rawArgs;
   // Generic delegation used by the subagent. The .md already added routing flags if needed.
+  const direction = directionFor(parsedInput.packet);
+  const taskClass = classifyTask(direction, 'task', parsedInput.packet);
+  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: requestText.length });
+  const routingFields = routingFieldsFor(routed);
+
   const jobId = generateJobId();
   console.log(`[pantheon] Starting delegated task ${jobId}...`);
-  saveJob(jobId, { type: 'task', request: rawArgs, status: 'running', ...packetJobFields(parsedInput) });
+  saveJob(jobId, direction, { type: 'task', request: rawArgs, status: 'running', ...routingFields, ...packetJobFields(parsedInput) });
   try {
-    const { stdout } = await runGrokHeadless(requestText, { jobId, label: 'Grok task', extraArgs: packetModelArgs(parsedInput) });
+    const { stdout } = await runGrokHeadless(requestText, { jobId, label: 'Grok task', extraArgs: routed.args });
     let clean = stdout, cost = null;
     try { const p = JSON.parse(stdout); if (p.text) clean = p.text; cost = extractCost(p); } catch {}
-    saveJob(jobId, { type: 'task', request: rawArgs, output: stdout, cost, status: 'complete', ...packetJobFields(parsedInput) });
+    saveJob(jobId, direction, { type: 'task', request: rawArgs, output: stdout, cost, status: 'complete', ...routingFields, ...packetJobFields(parsedInput) });
     console.log(clean);
     if (cost != null) console.log(`[pantheon] cost: $${Number(cost).toFixed(4)}`);
   } catch (e) {
-    saveJob(jobId, { status: 'failed', error: e.message });
+    saveJob(jobId, direction, { status: 'failed', error: e.message });
     console.error('Task failed:', e.message);
     process.exit(1);
   }
@@ -430,9 +458,9 @@ function cmdHealth(args) {
       claudeBareRequested: process.env.GROK_BRIDGE_CLAUDE_BARE === '1'
     },
     models: {
-      grok: 'grok-build (local CLI default)',
-      claude: DEFAULT_CLAUDE_MODEL,
-      codex: DEFAULT_CODEX_MODEL
+      grok: MODEL_TIERS.grok,
+      claude: MODEL_TIERS.claude,
+      codex: MODEL_TIERS.codex
     },
     binaries: {
       grok: { path: grokBin, version: versionOf(grokBin) },
@@ -461,6 +489,11 @@ function cmdHealth(args) {
     const grokExpect = 'PANTHEON-GROK-42';
     const claudeExpect = 'PANTHEON-CLAUDE-42';
     const codexExpect = 'PANTHEON-CODEX-42';
+    // Health-class routing for each handshake — pinned cheap/fast tiers via the
+    // router (never a fresh model literal here).
+    const grokHealthRouted = resolveModel({ direction: 'claude-to-grok', taskClass: 'health' });
+    const claudeHealthRouted = resolveModel({ direction: 'grok-to-claude', taskClass: 'health' });
+    const codexHealthRouted = resolveModel({ direction: 'claude-to-codex', taskClass: 'health' });
     const grokHandshake = [
       '-p', `Pantheon health check. Reply with exactly PANTHEON-GROK-N ${CHALLENGE}.`,
       '--output-format', 'json',
@@ -468,10 +501,11 @@ function cmdHealth(args) {
       '--permission-mode', 'plan',
       '--max-turns', '2',
       '--no-subagents',
-      '--disable-web-search'
+      '--disable-web-search',
+      ...grokHealthRouted.args
     ];
     const claudeHandshake = [
-      '--model', DEFAULT_CLAUDE_MODEL,
+      ...claudeHealthRouted.args,
       '-p', `Pantheon health check. Reply with exactly PANTHEON-CLAUDE-N ${CHALLENGE}.`,
       '--output-format', 'json',
       '--permission-mode', 'plan',
@@ -480,7 +514,7 @@ function cmdHealth(args) {
     ];
     const codexHandshake = [
       'exec',
-      '--model', DEFAULT_CODEX_MODEL,
+      ...codexHealthRouted.args,
       '--sandbox', 'read-only',
       '--ephemeral',
       '--skip-git-repo-check',
@@ -602,12 +636,12 @@ function cmdCancel(args) {
   }
   try {
     process.kill(job.pid, 'SIGTERM');
-    saveJob(id, { status: 'cancelled' });
+    saveJob(id, job.direction, { status: 'cancelled' });
     console.log(`[pantheon] Sent SIGTERM to PID ${job.pid} for job ${id}. Marked cancelled.`);
   } catch (e) {
     // ESRCH = process already gone.
     const note = e.code === 'ESRCH' ? 'process already exited' : e.message;
-    saveJob(id, { status: 'cancelled' });
+    saveJob(id, job.direction, { status: 'cancelled' });
     console.log(`[pantheon] Could not signal PID ${job.pid} (${note}). Marked ${id} cancelled.`);
   }
 }

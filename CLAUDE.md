@@ -65,8 +65,10 @@ plugins/grok/
   scripts/
     grok-companion.mjs               # FORWARD leg (Claude→Grok). Main entry for imagine/review/task/status/result/cancel/setup
     claude-companion.mjs             # REVERSE leg (Grok→Claude). Shells local-OAuth-safe `claude --model … -p … --output-format json`
+    codex-companion.mjs              # CODEX leg (Claude→Codex, Grok→Codex). Shells `codex exec -m … -c model_reasoning_effort=… --sandbox read-only`
     lib/
       bridge-guard.mjs               # SAFETY layer: loop guard, write gate, timeout, heartbeat
+      model-routing.mjs              # SINGLE SOURCE OF TRUTH for model IDs: ROUTING_TABLE, MODEL_TIERS, classifyTask(), resolveModel()
       state.mjs                      # canonical job ledger (single writer for BOTH directions)
       args.mjs                       # tiny arg helpers
 skills/                              # GROK-SIDE pieces (installed into ~/.grok, not the Claude plugin)
@@ -88,7 +90,7 @@ asset paths, **copies them into the gallery**, prints clean text + clickable lin
 
 **Reverse (`claude-delegate …` from Grok):** Grok skill shells
 `node …/claude-companion.mjs "task" [flags]` → `runClaudeHeadless` spawns local-OAuth-safe
-`claude --model claude-sonnet-4-6 -p <task> --output-format json --permission-mode plan [sanitized flags]`
+`claude --model claude-opus-4-8 -p <task> --output-format json --permission-mode plan [sanitized flags]`
 → result + cost + session_id recorded in the same ledger. `--bare` is reserved for explicit API-key/settings auth.
 
 **Pantheon packets:** companions accept plain prompt strings by default. If the input is JSON with
@@ -202,3 +204,49 @@ Claude session verified and added/fixed.
 **Audit correction:** the original audit flagged shell-quoting/injection via `"$ARGUMENTS"`. This is
 **not** a real vulnerability — bash does not re-scan a double-quoted parameter expansion, and `spawn`
 runs without a shell, so embedded quotes/backticks/`$()` are inert. No fix needed.
+
+## Change log — 2026-07-03 (model-routing brain)
+
+**Central router as single source of truth.** New `plugins/grok/scripts/lib/model-routing.mjs` — the
+only file in the repo allowed to contain a model-ID literal. Exports `ROUTING_TABLE`, `MODEL_TIERS`,
+`classifyTask()`, `resolveModel()`. `claude-companion.mjs` and `grok-companion.mjs` now call the router
+instead of the scattered `DEFAULT_CLAUDE_MODEL`/`DEFAULT_CODEX_MODEL` constants and `packetModelArgs()`
+helper they used to hardcode; every leg records `model`/`effort`/`routing{taskClass, source, escalated}`
+plus a packet-derived `direction` (`${from}-to-${to}`) in the ledger. Precedence: explicit `--model` >
+`packet.model` > env (`GROK_BRIDGE_CLAUDE_MODEL`/`GROK_BRIDGE_CODEX_MODEL`/`GROK_BRIDGE_GROK_MODEL`) >
+routing table > binary default.
+
+**The routing matrix** (direction → task → model@effort) covers all six directions — see the table in
+`README.md` § Model routing or `docs/PANTHEON-EXPLAINED.md` for the plain-English version. Notable
+rules: auto-escalates to the deep tier on risk keywords (security/auth/payment/credential/secret/
+data-loss/migration/destructive/production, stem-matched) or `packet.escalate`/`budget.cost:high`/retry;
+caps to the cheap tier on `budget.cost:low`; `security-review` is force-pinned to `claude-opus-4-8` and
+cannot be downgraded by an untrusted packet or env override; Claude legs get a `[1m]` context-window
+model when the prompt plus context exceeds ~600k characters. Health handshakes now use routed cheap
+health-tier models instead of a separate hardcoded set.
+
+**Codex leg made real.** New `plugins/grok/scripts/codex-companion.mjs` — Claude→Codex and Grok→Codex
+now actually spawn `codex exec -m <model> -c model_reasoning_effort=<effort> --sandbox read-only
+--skip-git-repo-check -C <cwd> <prompt>`, sharing the same loop guard, write gate, timeout, heartbeat,
+and job ledger as the other two companions. Previously these directions had no real companion.
+
+**Security/write-gate hardening.** New `sanitizeCodexArgs()` in `lib/bridge-guard.mjs` strips
+`-c`/`--config` and `--profile`/`-p` (config-override escape vectors — a delegator could otherwise
+smuggle `sandbox_mode="danger-full-access"` or an env-inheriting shell policy past the gate) in addition
+to the sandbox-bypass flags, then pins `--sandbox read-only` unless `GROK_BRIDGE_ALLOW_WRITES=1`.
+`splitFlag()` (shared by both write gates) was widened from double-dash-only to also handle Codex's
+single-dash short flags (`-s`, `-a`, `-m`, …) — without this, a joined short flag like
+`-s=danger-full-access` matched no known name and slipped through ungated.
+
+**Stale model-ID sweep.** Removed every hardcoded model-ID literal left over from before the router
+existed (the old Sonnet-4.6-era default in both companions, the ad hoc `packetModelArgs()` helper) so
+`model-routing.mjs` is genuinely the only place a model string can appear; usage/help text updated to
+match (`claude-sonnet-5`).
+
+**88 tests pass** (`node --test tests/*.test.mjs`), including new `tests/model-routing.test.mjs` and
+`tests/codex-guard.test.mjs`.
+
+**Default tiers updated 2026-07-03:** reasoning→claude-opus-4-8, coding→gpt-5.3-codex-spark/grok-build;
+Fable and Sonnet removed from the table (`grok-build` IS Grok 4.3 — xAI's Grok Build CLI exposes no separate `grok-4.3` slug, so grok-build covers the Grok reasoning+coding default).
+
+Sonnet 5 reintroduced as the balanced Claude tier (data-model + second-opinion, auto-escalating to Opus on risk); `[1m]` fallback back to sonnet.

@@ -37,7 +37,7 @@ From Grok:
 - "claude-delegate draft the launch email copy that references the new assets, keeping the tone premium and minimal"
 
 The reverse companion runs local-OAuth-safe Claude headless mode:
-`claude --model claude-sonnet-4-6 -p "..." --output-format json --permission-mode plan`.
+`claude --model claude-opus-4-8 -p "..." --output-format json --permission-mode plan`.
 `--bare` is reserved for explicit API-key/settings auth because it skips keychain/OAuth reads.
 
 Claude's output and any files it creates are captured and handed back to Grok with clear provenance.

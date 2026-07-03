@@ -59,9 +59,15 @@ const DANGEROUS_FLAGS = new Set([
 // not denylist — anything unknown/future is rejected by default.
 const SAFE_PERMISSION_MODES = new Set(['default', 'plan']);
 
-/** Split a token into {name, value} handling both `--flag value` and `--flag=value`. */
+/**
+ * Split a token into {name, value} handling both `--flag value` / `--flag=value`
+ * and the single-dash short-flag equivalents (`-f value` / `-f=value`) that
+ * Codex's CLI uses (`-s`, `-a`, `-m`, ...). Without the single-dash case, a
+ * short `=`-joined flag like `-s=danger-full-access` would fail name matching
+ * entirely and slip through a gate meant to strip it.
+ */
 function splitFlag(tok) {
-  if (typeof tok === 'string' && tok.startsWith('--')) {
+  if (typeof tok === 'string' && tok.startsWith('-')) {
     const eq = tok.indexOf('=');
     if (eq !== -1) return { name: tok.slice(0, eq), value: tok.slice(eq + 1), joined: true };
     return { name: tok, value: undefined, joined: false };
@@ -116,6 +122,98 @@ export function sanitizeClaudeArgs(extraArgs = []) {
   // Pin a read-only tool set so a delegated task can inspect but not change the machine.
   out.unshift('--allowedTools', 'Read,Glob,Grep');
   notes.push('enforced read-only --allowedTools Read,Glob,Grep (set GROK_BRIDGE_ALLOW_WRITES=1 to allow writes)');
+  return { args: out, gated: true, notes };
+}
+
+// ---- Write gate (Codex leg: Claude/Grok → Codex) ---------------------------
+
+// Flags that hand Codex autonomous, sandbox-free execution power.
+const CODEX_DANGEROUS_FLAGS = new Set([
+  '--dangerously-bypass-approvals-and-sandbox',
+  '--full-auto',
+  '--yolo',
+]);
+
+/** True if `tok` is either form of the sandbox flag (`-s` or `--sandbox`). */
+function isSandboxFlag(name) {
+  return name === '--sandbox' || name === '-s';
+}
+
+// `-c/--config` lets a caller override arbitrary `~/.codex/config.toml`
+// values (e.g. `-c sandbox_mode="danger-full-access"`,
+// `-c approval_policy="never"`, `-c shell_environment_policy.inherit="all"`
+// for secret exfil via env). `--profile/-p` layers a whole config profile on
+// top, which can smuggle the same overrides indirectly. Both are pure
+// config-escape vectors for a read-only-gated delegator and must be stripped
+// wholesale in the gated path — the companion re-adds its own trusted
+// `-c model_reasoning_effort=…` from the router AFTER this function runs, so
+// stripping every caller `-c` here cannot lose legitimate routing info.
+function isConfigOverrideFlag(name) {
+  return name === '-c' || name === '--config';
+}
+function isProfileFlag(name) {
+  return name === '--profile' || name === '-p';
+}
+
+/**
+ * Filter caller-supplied Codex CLI flags. Unless GROK_BRIDGE_ALLOW_WRITES=1,
+ * strip anything that would let a delegator drive `codex exec` with
+ * unsandboxed writes/exec — including indirect config-override escapes via
+ * `-c`/`--config` and `--profile`/`-p` — and pin `--sandbox read-only`.
+ * Returns { args, gated, notes } — never mutates input. Uses the same
+ * `splitFlag` `=`-joined-vs-spaced robustness as sanitizeClaudeArgs.
+ *
+ * In the writes-allowed path, `-c`/`--profile` are left intact (the operator
+ * explicitly opted in via GROK_BRIDGE_ALLOW_WRITES=1); only the sandbox
+ * normalization applies there.
+ */
+export function sanitizeCodexArgs(extraArgs = []) {
+  if (writesAllowed()) {
+    const out = [...extraArgs];
+    const notes = ['writes ALLOWED (GROK_BRIDGE_ALLOW_WRITES=1)'];
+    if (!out.some(tok => isSandboxFlag(splitFlag(tok).name))) {
+      out.push('--sandbox', 'workspace-write');
+      notes.push('normalized --sandbox workspace-write (no explicit --sandbox supplied)');
+    }
+    return { args: out, gated: false, notes };
+  }
+
+  const out = [];
+  const notes = [];
+  for (let i = 0; i < extraArgs.length; i++) {
+    const { name, value, joined } = splitFlag(extraArgs[i]);
+
+    if (CODEX_DANGEROUS_FLAGS.has(name)) {
+      notes.push(`stripped ${name}`);
+      continue;
+    }
+
+    if (isSandboxFlag(name)) {
+      const stripped = joined ? value : extraArgs[i + 1];
+      if (!joined) i++; // consume the value token either way
+      notes.push(`stripped caller ${name}${stripped ? ` ${stripped}` : ''}`);
+      continue;
+    }
+
+    if (name === '--ask-for-approval' || name === '-a') {
+      const stripped = joined ? value : extraArgs[i + 1];
+      if (!joined) i++; // also drop the separate value token
+      notes.push(`stripped caller ${name}${stripped ? ` ${stripped}` : ''}`);
+      continue;
+    }
+
+    if (isConfigOverrideFlag(name) || isProfileFlag(name)) {
+      const stripped = joined ? value : extraArgs[i + 1];
+      if (!joined) i++; // consume the value token either way
+      notes.push(`stripped caller ${name}${stripped ? ` ${stripped}` : ''} (config-override gate)`);
+      continue;
+    }
+
+    out.push(extraArgs[i]);
+  }
+  // Pin read-only so a delegated task can inspect but not change the machine.
+  out.push('--sandbox', 'read-only');
+  notes.push('enforced --sandbox read-only (set GROK_BRIDGE_ALLOW_WRITES=1 to allow writes)');
   return { args: out, gated: true, notes };
 }
 

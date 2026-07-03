@@ -79,16 +79,18 @@ Companions must store packet metadata in the job ledger and include `media[]` un
 
 | Agent | Default | Fast/cheap | High-stakes |
 | --- | --- | --- | --- |
-| Codex | `gpt-5.5` with high reasoning | `gpt-5.4-mini` | `gpt-5.3-codex-spark` only for near-instant iteration when available |
-| Claude | `claude-sonnet-4-6` | `claude-haiku-4-5` | `claude-opus-4-8` only when explicitly requested |
-| Grok | local CLI default `grok-build` | local fast Grok CLI model when available | Grok 4.3 for general synthesis if exposed; Imagine exclusively for image/video |
+| Codex | `gpt-5.3-codex-spark` @ high reasoning (default) | `gpt-5.4-mini` | `gpt-5.5` @ xhigh for the deep tier; `codex-auto-review` for review |
+| Claude | `claude-opus-4-8` | `claude-haiku-4-5-20251001` | `claude-opus-4-8` for architecture/security-review; `claude-sonnet-5` (balanced tier) for data-model/second-opinion, auto-escalating to `claude-opus-4-8` on risk keywords, `escalate:true`, `budget.cost:high`, or a retry — Fable is not used |
+| Grok | `grok-build` (= Grok 4.3) | `grok-composer-2.5-fast` | `grok-build` @ xhigh, best-of-3 for deep-creative work; Imagine exclusively for image/video. `grok-build` IS xAI's Grok 4.3 coding agent (the CLI exposes no separate `grok-4.3` slug), so it covers general synthesis too |
+
+The routing table in `plugins/grok/scripts/lib/model-routing.mjs` is canonical; this doc mirrors it.
 
 Bridge invocations should record the model actually requested or used in the job ledger.
 
 ## Implementation Notes
 
 - Grok -> Claude must default to non-bare local OAuth mode:
-  `claude --model claude-sonnet-4-6 -p ... --output-format json --permission-mode plan`.
+  `claude --model claude-opus-4-8 -p ... --output-format json --permission-mode plan`.
 - Use `--bare` only when API-key/settings auth is explicitly configured. Local OAuth/keychain auth is skipped in bare mode and produces `Not logged in`.
 - `/grok:health` should report binaries, versions, model defaults, write-gate status, hop status, configured legs, and optional live read-only handshakes.
 - This plan is project-agnostic. Project-specific protocols such as Texpert stay in their own project docs.

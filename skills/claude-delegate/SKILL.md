@@ -20,7 +20,7 @@ Use this skill to hand work **to the local Claude Code CLI** on the same machine
 - This skill calls the small `claude-companion.mjs` (in the bridge repo).
 - The companion runs local-OAuth-safe Claude headless mode:
   ```bash
-  claude --model claude-sonnet-4-6 -p "your task..." --output-format json --permission-mode plan
+  claude --model claude-opus-4-8 -p "your task..." --output-format json --permission-mode plan
   ```
 - `--bare` is only used when API-key/settings auth is explicitly configured. Bare mode skips keychain/OAuth reads on this Mac.
 - Results + any files Claude wrote are captured in `.grok-bridge/` and surfaced back to you with clear local paths and provenance.
