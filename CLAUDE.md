@@ -247,4 +247,4 @@ match (`claude-sonnet-5`).
 `tests/codex-guard.test.mjs`.
 
 **Default tiers updated 2026-07-03:** reasoning→claude-opus-4-8, coding→gpt-5.3-codex-spark/grok-build;
-Fable and Sonnet removed from the table (Grok 4.3 not exposed by local CLI, grok-build used).
+Fable and Sonnet removed from the table (`grok-build` IS Grok 4.3 — xAI's Grok Build CLI exposes no separate `grok-4.3` slug, so grok-build covers the Grok reasoning+coding default).

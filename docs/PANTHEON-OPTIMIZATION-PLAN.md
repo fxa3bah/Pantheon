@@ -81,7 +81,7 @@ Companions must store packet metadata in the job ledger and include `media[]` un
 | --- | --- | --- | --- |
 | Codex | `gpt-5.3-codex-spark` @ high reasoning (default) | `gpt-5.4-mini` | `gpt-5.5` @ xhigh for the deep tier; `codex-auto-review` for review |
 | Claude | `claude-opus-4-8` | `claude-haiku-4-5-20251001` | `claude-opus-4-8` for architecture/second-opinion/security-review — Fable and Sonnet are not used |
-| Grok | `grok-build` | `grok-composer-2.5-fast` | `grok-build` @ xhigh, best-of-3 for deep-creative work; Imagine exclusively for image/video (Grok 4.3 is not exposed by the local CLI, so `grok-build` covers general synthesis too) |
+| Grok | `grok-build` (= Grok 4.3) | `grok-composer-2.5-fast` | `grok-build` @ xhigh, best-of-3 for deep-creative work; Imagine exclusively for image/video. `grok-build` IS xAI's Grok 4.3 coding agent (the CLI exposes no separate `grok-4.3` slug), so it covers general synthesis too |
 
 The routing table in `plugins/grok/scripts/lib/model-routing.mjs` is canonical; this doc mirrors it.
 
