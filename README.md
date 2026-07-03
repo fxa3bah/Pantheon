@@ -50,13 +50,15 @@ Every model choice in Pantheon flows through one file, `plugins/grok/scripts/lib
 | claude → codex | review | `codex-auto-review` @ high |
 | claude → codex | verify | `gpt-5.3-codex-spark` @ high |
 | claude → codex | health | `gpt-5.4-mini` @ minimal |
-| grok → claude | architecture / second-opinion / data-model | `claude-opus-4-8` |
+| grok → claude | architecture | `claude-opus-4-8` |
+| grok → claude | data-model / second-opinion | `claude-sonnet-5` (auto-escalates to `claude-opus-4-8` on risk) |
 | grok → claude | security-review | `claude-opus-4-8` |
 | grok → claude | summarize / health | `claude-haiku-4-5` |
 | grok → codex | implement | `gpt-5.3-codex-spark` @ high |
 | grok → codex | review | `codex-auto-review` @ high |
 | grok → codex | verify | `gpt-5.3-codex-spark` @ high |
-| codex → claude | second-opinion / reasoning / architecture | `claude-opus-4-8` |
+| codex → claude | reasoning / architecture | `claude-opus-4-8` |
+| codex → claude | second-opinion | `claude-sonnet-5` (auto-escalates to `claude-opus-4-8` on risk) |
 | codex → claude | security-review | `claude-opus-4-8` |
 | codex → grok | imagine / assets | `grok-build` @ high |
 | codex → grok | creative-review | `grok-build` @ xhigh, best-of-3 |

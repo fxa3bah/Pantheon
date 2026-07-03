@@ -248,3 +248,5 @@ match (`claude-sonnet-5`).
 
 **Default tiers updated 2026-07-03:** reasoning→claude-opus-4-8, coding→gpt-5.3-codex-spark/grok-build;
 Fable and Sonnet removed from the table (`grok-build` IS Grok 4.3 — xAI's Grok Build CLI exposes no separate `grok-4.3` slug, so grok-build covers the Grok reasoning+coding default).
+
+Sonnet 5 reintroduced as the balanced Claude tier (data-model + second-opinion, auto-escalating to Opus on risk); `[1m]` fallback back to sonnet.

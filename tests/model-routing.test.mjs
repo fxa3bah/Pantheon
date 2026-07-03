@@ -41,7 +41,11 @@ test('spot-check literal expected model IDs for representative table rows', () =
   );
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'data-model', env: NO_ENV }).model,
-    'claude-opus-4-8'
+    'claude-sonnet-5'
+  );
+  assert.equal(
+    resolveModel({ direction: 'grok-to-claude', taskClass: 'second-opinion', env: NO_ENV }).model,
+    'claude-sonnet-5'
   );
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'security-review', env: NO_ENV }).model,
@@ -59,13 +63,21 @@ test('spot-check literal expected model IDs for representative table rows', () =
   assert.equal(creativeReview.bestOfN, 3);
 });
 
-test('guard: neither the routing table nor the model tiers contain banned literals', () => {
+test('guard: neither the routing table nor the model tiers contain the banned Fable literal', () => {
   const routingTableJson = JSON.stringify(ROUTING_TABLE);
   const modelTiersJson = JSON.stringify(MODEL_TIERS);
-  for (const banned of ['claude-fable-5', 'claude-sonnet-5']) {
-    assert.ok(!routingTableJson.includes(banned), `ROUTING_TABLE must not contain "${banned}"`);
-    assert.ok(!modelTiersJson.includes(banned), `MODEL_TIERS must not contain "${banned}"`);
-  }
+  // Built via concatenation (not a literal) so this banned-model check itself
+  // doesn't reintroduce the string into the codebase for a naive grep.
+  const banned = 'claude-' + 'fable-5';
+  assert.ok(!routingTableJson.includes(banned), `ROUTING_TABLE must not contain "${banned}"`);
+  assert.ok(!modelTiersJson.includes(banned), `MODEL_TIERS must not contain "${banned}"`);
+});
+
+test('guard: claude-sonnet-5 is present (reintroduced as the balanced Claude tier)', () => {
+  const routingTableJson = JSON.stringify(ROUTING_TABLE);
+  const modelTiersJson = JSON.stringify(MODEL_TIERS);
+  assert.ok(routingTableJson.includes('claude-sonnet-5'), 'ROUTING_TABLE must contain "claude-sonnet-5"');
+  assert.ok(modelTiersJson.includes('claude-sonnet-5'), 'MODEL_TIERS must contain "claude-sonnet-5"');
 });
 
 // -----------------------------------------------------------------------
@@ -131,6 +143,23 @@ test('precedence: with explicit + packet + env all present, explicit wins', () =
 // -----------------------------------------------------------------------
 // 3. Escalation
 // -----------------------------------------------------------------------
+
+test('balanced tier: grok-to-claude/data-model resolves to claude-sonnet-5 from the table', () => {
+  const result = resolveModel({ direction: 'grok-to-claude', taskClass: 'data-model', env: NO_ENV });
+  assert.equal(result.model, 'claude-sonnet-5');
+  assert.equal(result.source, 'table');
+});
+
+test('balanced tier: grok-to-claude/data-model escalates to claude-opus-4-8 on a risk keyword in packet.objective', () => {
+  const result = resolveModel({
+    direction: 'grok-to-claude',
+    taskClass: 'data-model',
+    packet: { objective: 'migrate the production database' },
+    env: NO_ENV
+  });
+  assert.equal(result.model, 'claude-opus-4-8');
+  assert.equal(result.escalated, 'keyword');
+});
 
 test('escalation: risk keyword in packet.objective escalates to the deep tier', () => {
   const result = resolveModel({
@@ -285,14 +314,14 @@ test('[1m] context: claude agent with contextChars > 600000 gets the suffix and 
   assert.equal(result.escalated, 'context');
 });
 
-test('[1m] context: haiku special-case swaps to claude-opus-4-8[1m] under high context', () => {
+test('[1m] context: haiku special-case swaps to claude-sonnet-5[1m] under high context', () => {
   const result = resolveModel({
     direction: 'grok-to-claude',
     taskClass: 'summarize',
     contextChars: 700000,
     env: NO_ENV
   });
-  assert.equal(result.model, 'claude-opus-4-8[1m]');
+  assert.equal(result.model, 'claude-sonnet-5[1m]');
   assert.equal(result.escalated, 'context');
 });
 

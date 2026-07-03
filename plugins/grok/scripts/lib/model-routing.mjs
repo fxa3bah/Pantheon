@@ -22,6 +22,7 @@ export const MODEL_TIERS = deepFreeze({
   claude: {
     deep: 'claude-opus-4-8',
     default: 'claude-opus-4-8',
+    balanced: 'claude-sonnet-5',
     cheap: 'claude-haiku-4-5-20251001'
   },
   codex: {
@@ -54,8 +55,8 @@ export const ROUTING_TABLE = deepFreeze({
   },
   'grok-to-claude': {
     architecture: { model: 'claude-opus-4-8' },
-    'second-opinion': { model: 'claude-opus-4-8' },
-    'data-model': { model: 'claude-opus-4-8' },
+    'second-opinion': { model: 'claude-sonnet-5' },
+    'data-model': { model: 'claude-sonnet-5' },
     'security-review': { model: 'claude-opus-4-8' },
     summarize: { model: 'claude-haiku-4-5-20251001' },
     health: { model: 'claude-haiku-4-5-20251001' }
@@ -67,7 +68,7 @@ export const ROUTING_TABLE = deepFreeze({
     health: { model: 'gpt-5.4-mini', effort: 'minimal' }
   },
   'codex-to-claude': {
-    'second-opinion': { model: 'claude-opus-4-8' },
+    'second-opinion': { model: 'claude-sonnet-5' },
     reasoning: { model: 'claude-opus-4-8' },
     architecture: { model: 'claude-opus-4-8' },
     'security-review': { model: 'claude-opus-4-8' },
@@ -296,7 +297,7 @@ export function resolveModel({
   // [1m] context suffix — claude agent only, applies regardless of source.
   const contextTriggered = agent === 'claude' && (contextChars > 600000 || packet?.budget?.context === '1m');
   if (contextTriggered && model) {
-    if (model === 'claude-haiku-4-5-20251001') model = 'claude-opus-4-8[1m]';
+    if (model === 'claude-haiku-4-5-20251001') model = 'claude-sonnet-5[1m]';
     else if (!model.endsWith('[1m]')) model = `${model}[1m]`;
     if (!escalated) escalated = 'context';
   }
