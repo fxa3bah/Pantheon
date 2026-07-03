@@ -23,14 +23,62 @@ Pantheon is a mesh of six directions. Be honest about maturity before you instal
 |---|---|---|
 | **Claude -> Grok** | Polished | `/grok-imagine`, `/grok-review` slash commands |
 | **Grok -> Claude** | Polished | `claude-delegate` skill + `claude-second-opinion` agent |
-| **Grok -> Codex** | Working | `codex-delegate` via the companion |
-| **Codex -> Grok** | Working | `grok "..."` / `grok-delegate` |
-| **Codex -> Claude** | Working | `claude "..."` / `claude-delegate` |
-| **Claude -> Codex** | Working | `codex "..."` |
+| **Claude -> Codex** | Real | `node plugins/grok/scripts/codex-companion.mjs "task"` spawns `codex exec` directly |
+| **Grok -> Codex** | Real | `codex-delegate` skill → the same `codex-companion.mjs` |
+| **Codex -> Claude** | Working | Codex shells `claude-companion.mjs` with a `packet.from: "codex"` handoff |
+| **Codex -> Grok** | Working | Codex shells `grok-companion.mjs` with a `packet.from: "codex"` handoff |
 
-The Claude and Grok legs are the most built-out (dedicated commands, a media gallery, a job ledger). The Codex legs share the same companions, ledger, and safety layer, and are verified by the live health check below. The canonical routing rules live in [`docs/PANTHEON-OPTIMIZATION-PLAN.md`](./docs/PANTHEON-OPTIMIZATION-PLAN.md).
+The Claude and Grok legs are the most built-out (dedicated commands, a media gallery, a job ledger). The Codex legs share the same companions, ledger, and safety layer — `codex-companion.mjs` makes Claude/Grok → Codex a real spawned `codex exec`, not a stub — and are verified by the live health check below. Dedicated `/grok:*`-style slash commands for the Codex legs are still on the roadmap; for now they're invoked via `node` directly or through the skills above. The canonical routing rules live in [`docs/PANTHEON-OPTIMIZATION-PLAN.md`](./docs/PANTHEON-OPTIMIZATION-PLAN.md).
 
 You do not need all three agents. If you only have Claude Code and Grok, the headline image and review flows work fully on their own.
+
+---
+
+## Model routing
+
+Every model choice in Pantheon flows through one file, `plugins/grok/scripts/lib/model-routing.mjs` — the **only** place in the repo allowed to contain a literal model ID. Every companion calls `classifyTask()` then `resolveModel()` instead of hardcoding a model string, so a model rename or retirement is a one-file edit. For a plain-English walkthrough, see [`docs/PANTHEON-EXPLAINED.md`](./docs/PANTHEON-EXPLAINED.md).
+
+### Routing matrix
+
+| Direction | Task | Model @ effort |
+|---|---|---|
+| claude → grok | imagine | `grok-build` @ high |
+| claude → grok | creative-review | `grok-build` @ xhigh, best-of-3 |
+| claude → grok | task | `grok-build` @ medium |
+| claude → grok | health | `grok-composer-2.5-fast` @ low |
+| claude → codex | implement | `gpt-5.5` @ medium |
+| claude → codex | review | `codex-auto-review` @ high |
+| claude → codex | verify | `gpt-5.3-codex-spark` @ high |
+| claude → codex | health | `gpt-5.4-mini` @ minimal |
+| grok → claude | architecture / second-opinion | `claude-fable-5` |
+| grok → claude | data-model | `claude-sonnet-5` |
+| grok → claude | security-review | `claude-opus-4-8` |
+| grok → claude | summarize / health | `claude-haiku-4-5` |
+| grok → codex | implement | `gpt-5.5` @ medium |
+| grok → codex | review | `codex-auto-review` @ high |
+| grok → codex | verify | `gpt-5.3-codex-spark` @ high |
+| codex → claude | second-opinion / reasoning / architecture | `claude-fable-5` |
+| codex → claude | security-review | `claude-opus-4-8` |
+| codex → grok | imagine / assets | `grok-build` @ high |
+| codex → grok | creative-review | `grok-build` @ xhigh, best-of-3 |
+| codex → grok | draft / task | `grok-composer-2.5-fast` @ medium |
+
+### Precedence
+
+For every hop, `resolveModel()` picks the model in this order — first match wins:
+
+1. An explicit `--model` (a human at the CLI always wins).
+2. `packet.model` on a structured Pantheon packet.
+3. An environment override: `GROK_BRIDGE_CLAUDE_MODEL`, `GROK_BRIDGE_CODEX_MODEL`, `GROK_BRIDGE_GROK_MODEL`.
+4. The routing table above.
+5. The target binary's own default, if nothing else applies.
+
+### Escalation and caps
+
+- **Auto-escalates to the deep tier** on risk keywords (`security`, `auth`, `payment`, `credential`, `secret`, `data-loss`, `migration`, `destructive`, `production` — stem-matched, so "authentication" and "migrations" both hit) in a packet's `objective`/`constraints`, or on `packet.escalate: true`, `packet.budget.cost: "high"`, or a retry.
+- **Caps to the cheap tier** when `packet.budget.cost: "low"`.
+- **`security-review` is force-pinned to `claude-opus-4-8`** and cannot be downgraded by an untrusted packet or env override — only an explicit human `--model` beats it.
+- **Long-context suffix:** Claude legs get a `[1m]` context-window model when the prompt plus context exceeds ~600k characters.
 
 ---
 
@@ -166,11 +214,13 @@ Every generated asset is copied into a dated gallery, never dumped into your wor
 
 **Claude -> Grok.** The slash command shells `node .../grok-companion.mjs imagine "$ARGUMENTS"`, which spawns your local `grok` in headless mode (`grok -p <prompt> --always-approve --output-format json`). Grok generates into its session directory; the companion copies the assets into the gallery and returns Grok's text and links verbatim.
 
-**Grok -> Claude.** The `claude-delegate` skill shells `node .../claude-companion.mjs "task" [flags]`, which runs `claude --model claude-sonnet-4-6 -p <task> --output-format json --permission-mode plan`. This uses your local login. (`--bare` is only used when you have explicitly configured API-key auth, because bare mode skips the keychain and OAuth.)
+**Grok -> Claude.** The `claude-delegate` skill shells `node .../claude-companion.mjs "task" [flags]`, which runs `claude --model claude-sonnet-5 -p <task> --output-format json --permission-mode plan`. This uses your local login. (`--bare` is only used when you have explicitly configured API-key auth, because bare mode skips the keychain and OAuth.)
 
-**Structured packets.** Companions accept plain prompt strings. If the input is JSON with `pantheon_packet: true`, the bridge treats it as a structured handoff and records the metadata (`from`, `to`, `lane`, `objective`, `model`, `media[]`, provenance) in the job ledger.
+**Claude/Grok -> Codex.** `node .../codex-companion.mjs "task" [flags]` shells `codex exec -m <model> -c model_reasoning_effort=<effort> --sandbox read-only --skip-git-repo-check -C <cwd> <prompt>`. It shares the same loop guard, write gate, timeout, heartbeat, and job ledger as the other two companions.
 
-Both directions share one job ledger at `./.grok-bridge/<job>.json` in the active workspace.
+**Structured packets.** Companions accept plain prompt strings. If the input is JSON with `pantheon_packet: true`, the bridge treats it as a structured handoff and records the metadata (`from`, `to`, `lane`, `objective`, `model`, `media[]`, provenance) in the job ledger. Every job also records the model actually used (`model`, `effort`, `routing: {taskClass, source, escalated}`) and a `direction` derived from the packet's `from`/`to` (e.g. `codex-to-claude`).
+
+All three companions share one job ledger at `./.grok-bridge/<job>.json` in the active workspace.
 
 ---
 

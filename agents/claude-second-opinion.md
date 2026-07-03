@@ -13,7 +13,7 @@ When to forward:
 
 Forwarding pattern (the companion does this for you):
 - Shell the local authenticated `claude` using the recommended bridge/scripted form:
-  `claude --model claude-sonnet-4-6 -p "the task, with any context" --output-format json --permission-mode plan`
+  `claude --model claude-sonnet-5 -p "the task, with any context" --output-format json --permission-mode plan`
 - `--bare` is reserved for explicit API-key/settings auth because it skips local keychain/OAuth reads.
 - Write/edit mode requires the operator to set `GROK_BRIDGE_ALLOW_WRITES=1`; do not request bypass flags as ordinary usage.
 - Capture the JSON result (or plain text) + any files Claude wrote.

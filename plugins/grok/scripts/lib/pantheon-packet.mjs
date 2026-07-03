@@ -100,6 +100,17 @@ export function packetModel(packet) {
   return null;
 }
 
+export function packetEffort(packet) {
+  if (!packet || packet.effort == null) return null;
+  return typeof packet.effort === 'string' ? (packet.effort.trim() || null) : null;
+}
+
+export function packetBestOfN(packet) {
+  if (!packet || packet.best_of_n == null) return null;
+  const n = Number(packet.best_of_n);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
 export function packetJobFields(parsedInput) {
   if (!parsedInput?.isPacket) return {};
   return {
@@ -111,6 +122,8 @@ export function packetJobFields(parsedInput) {
       objective: parsedInput.packet.objective,
       provenance: parsedInput.packet.provenance || null,
       model: packetModel(parsedInput.packet),
+      effort: packetEffort(parsedInput.packet),
+      escalate: parsedInput.packet.escalate === true ? true : null,
       media: parsedInput.media
     }
   };

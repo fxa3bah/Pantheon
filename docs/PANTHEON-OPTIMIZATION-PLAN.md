@@ -79,16 +79,18 @@ Companions must store packet metadata in the job ledger and include `media[]` un
 
 | Agent | Default | Fast/cheap | High-stakes |
 | --- | --- | --- | --- |
-| Codex | `gpt-5.5` with high reasoning | `gpt-5.4-mini` | `gpt-5.3-codex-spark` only for near-instant iteration when available |
-| Claude | `claude-sonnet-4-6` | `claude-haiku-4-5` | `claude-opus-4-8` only when explicitly requested |
-| Grok | local CLI default `grok-build` | local fast Grok CLI model when available | Grok 4.3 for general synthesis if exposed; Imagine exclusively for image/video |
+| Codex | `gpt-5.5` @ medium reasoning (default) | `gpt-5.4-mini` | `gpt-5.3-codex-spark` for fast-agentic verify; `codex-auto-review` for review |
+| Claude | `claude-sonnet-5` | `claude-haiku-4-5` | `claude-opus-4-8` only when explicitly requested; `claude-fable-5` for architect/second-opinion |
+| Grok | `grok-build` | `grok-composer-2.5-fast` | Grok 4.3 for general synthesis if exposed; Imagine exclusively for image/video |
+
+The routing table in `plugins/grok/scripts/lib/model-routing.mjs` is canonical; this doc mirrors it.
 
 Bridge invocations should record the model actually requested or used in the job ledger.
 
 ## Implementation Notes
 
 - Grok -> Claude must default to non-bare local OAuth mode:
-  `claude --model claude-sonnet-4-6 -p ... --output-format json --permission-mode plan`.
+  `claude --model claude-sonnet-5 -p ... --output-format json --permission-mode plan`.
 - Use `--bare` only when API-key/settings auth is explicitly configured. Local OAuth/keychain auth is skipped in bare mode and produces `Not logged in`.
 - `/grok:health` should report binaries, versions, model defaults, write-gate status, hop status, configured legs, and optional live read-only handshakes.
 - This plan is project-agnostic. Project-specific protocols such as Texpert stay in their own project docs.
