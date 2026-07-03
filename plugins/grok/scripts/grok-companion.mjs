@@ -132,7 +132,7 @@ async function runGrokHeadless(prompt, { extraArgs = [], jobId, label = 'Grok' }
   assertHopAllowed('hand off to Grok');
 
   const args = [
-    '-p', prompt,
+    '-p', withCompliance('grok', prompt),
     '--always-approve',
     '--output-format', 'json',
     '--cwd', process.cwd(),

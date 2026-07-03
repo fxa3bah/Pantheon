@@ -129,6 +129,18 @@ packet metadata in the ledger.
 | `GROK_BRIDGE_TIMEOUT_MS` | `300000` | Kill a headless child after this long |
 | `GROK_BRIDGE_ALLOW_WRITES` | unset | `=1` lets the reverse leg run Claude with write/exec perms |
 | `GROK_BRIDGE_QUIET` | unset | `=1` silences the progress heartbeat |
+| `GROK_BRIDGE_NO_COMPLIANCE` | unset | `=1` skips the operating-context header prepended to delegated prompts |
+
+## Cross-agent compliance (`lib/compliance.mjs`)
+
+Delegated agents run headless, and empirical probing (2026-07-03) showed each loads most of its own
+context natively (global + project instructions, rules/skills) but with gaps: `~/.claude/DESIGN.md`
+never auto-loads for anyone; Grok/Codex do not auto-load their memory; Codex reads `AGENTS.md`, not
+`CLAUDE.md`. So every delegated prompt is prefixed with a short **operating-context header**
+(`withCompliance(agent, prompt)`) that points the receiving agent at exactly the sources it must honor
+— including its memory and `~/.claude/DESIGN.md` for any UI work — so it applies its full rule set, not
+just the bare task. Disable with `GROK_BRIDGE_NO_COMPLIANCE=1`. A repo-root `AGENTS.md` mirrors the key
+invariants so `AGENTS.md`-reading agents (Codex) pick them up natively too.
 
 ## Safety layer (`lib/bridge-guard.mjs`)
 

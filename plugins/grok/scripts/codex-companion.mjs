@@ -36,6 +36,7 @@ import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.m
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
 import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, sanitizeCodexArgs } from './lib/bridge-guard.mjs';
+import { withCompliance } from './lib/compliance.mjs';
 
 export function resolveCodexBinary() {
   const which = process.platform === 'win32' ? 'where' : 'which';
@@ -160,7 +161,7 @@ async function runCodexHeadless(prompt, extraArgs = [], jobId, options = {}) {
     '-C', process.cwd(),
     '--json',
     '-o', lastMessageFile,
-    prompt,
+    withCompliance('codex', prompt),
   ];
 
   return new Promise((resolve, reject) => {

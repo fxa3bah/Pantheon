@@ -27,6 +27,7 @@ import process from 'node:process';
 import { assertHopAllowed, childEnv, armTimeout, sanitizeClaudeArgs, startHeartbeat, currentHop } from './lib/bridge-guard.mjs';
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
+import { withCompliance } from './lib/compliance.mjs';
 import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.mjs';
 
 function generateJobId() {
@@ -162,7 +163,7 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
   const args = [
     ...(useBare ? ['--bare'] : []),
     ...modelArgs,
-    '-p', prompt,
+    '-p', withCompliance('claude', prompt),
     '--output-format', 'json',
     ...permissionArgs,
     ...safeExtra
