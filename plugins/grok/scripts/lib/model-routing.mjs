@@ -21,21 +21,18 @@ function nonEmptyString(value) {
 export const MODEL_TIERS = deepFreeze({
   claude: {
     deep: 'claude-opus-4-8',
-    architect: 'claude-fable-5',
-    default: 'claude-sonnet-5',
+    default: 'claude-opus-4-8',
     cheap: 'claude-haiku-4-5-20251001'
   },
   codex: {
     deep: { model: 'gpt-5.5', effort: 'xhigh' },
-    default: { model: 'gpt-5.5', effort: 'medium' },
+    default: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     review: { model: 'codex-auto-review', effort: 'high' },
-    fast: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     cheap: { model: 'gpt-5.4-mini', effort: 'minimal' }
   },
   grok: {
     deepCreative: { model: 'grok-build', effort: 'xhigh', bestOfN: 3 },
     default: { model: 'grok-build', effort: 'high' },
-    general: { model: 'grok-build', effort: 'medium' },
     cheap: { model: 'grok-composer-2.5-fast', effort: 'low' }
   }
 });
@@ -50,29 +47,29 @@ export const ROUTING_TABLE = deepFreeze({
     health: { model: 'grok-composer-2.5-fast', effort: 'low' }
   },
   'claude-to-codex': {
-    implement: { model: 'gpt-5.5', effort: 'medium' },
+    implement: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     review: { model: 'codex-auto-review', effort: 'high' },
     verify: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     health: { model: 'gpt-5.4-mini', effort: 'minimal' }
   },
   'grok-to-claude': {
-    architecture: { model: 'claude-fable-5' },
-    'second-opinion': { model: 'claude-fable-5' },
-    'data-model': { model: 'claude-sonnet-5' },
+    architecture: { model: 'claude-opus-4-8' },
+    'second-opinion': { model: 'claude-opus-4-8' },
+    'data-model': { model: 'claude-opus-4-8' },
     'security-review': { model: 'claude-opus-4-8' },
     summarize: { model: 'claude-haiku-4-5-20251001' },
     health: { model: 'claude-haiku-4-5-20251001' }
   },
   'grok-to-codex': {
-    implement: { model: 'gpt-5.5', effort: 'medium' },
+    implement: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     review: { model: 'codex-auto-review', effort: 'high' },
     verify: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     health: { model: 'gpt-5.4-mini', effort: 'minimal' }
   },
   'codex-to-claude': {
-    'second-opinion': { model: 'claude-fable-5' },
-    reasoning: { model: 'claude-fable-5' },
-    architecture: { model: 'claude-fable-5' },
+    'second-opinion': { model: 'claude-opus-4-8' },
+    reasoning: { model: 'claude-opus-4-8' },
+    architecture: { model: 'claude-opus-4-8' },
     'security-review': { model: 'claude-opus-4-8' },
     health: { model: 'claude-haiku-4-5-20251001' }
   },
@@ -80,7 +77,7 @@ export const ROUTING_TABLE = deepFreeze({
     imagine: { model: 'grok-build', effort: 'high' },
     assets: { model: 'grok-build', effort: 'high' },
     'creative-review': { model: 'grok-build', effort: 'xhigh', bestOfN: 3 },
-    task: { model: 'grok-composer-2.5-fast', effort: 'medium' },
+    task: { model: 'grok-build', effort: 'medium' },
     draft: { model: 'grok-composer-2.5-fast', effort: 'medium' },
     health: { model: 'grok-composer-2.5-fast', effort: 'low' }
   }
@@ -299,7 +296,7 @@ export function resolveModel({
   // [1m] context suffix — claude agent only, applies regardless of source.
   const contextTriggered = agent === 'claude' && (contextChars > 600000 || packet?.budget?.context === '1m');
   if (contextTriggered && model) {
-    if (model === 'claude-haiku-4-5-20251001') model = 'claude-sonnet-5[1m]';
+    if (model === 'claude-haiku-4-5-20251001') model = 'claude-opus-4-8[1m]';
     else if (!model.endsWith('[1m]')) model = `${model}[1m]`;
     if (!escalated) escalated = 'context';
   }

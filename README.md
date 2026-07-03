@@ -46,22 +46,22 @@ Every model choice in Pantheon flows through one file, `plugins/grok/scripts/lib
 | claude → grok | creative-review | `grok-build` @ xhigh, best-of-3 |
 | claude → grok | task | `grok-build` @ medium |
 | claude → grok | health | `grok-composer-2.5-fast` @ low |
-| claude → codex | implement | `gpt-5.5` @ medium |
+| claude → codex | implement | `gpt-5.3-codex-spark` @ high |
 | claude → codex | review | `codex-auto-review` @ high |
 | claude → codex | verify | `gpt-5.3-codex-spark` @ high |
 | claude → codex | health | `gpt-5.4-mini` @ minimal |
-| grok → claude | architecture / second-opinion | `claude-fable-5` |
-| grok → claude | data-model | `claude-sonnet-5` |
+| grok → claude | architecture / second-opinion / data-model | `claude-opus-4-8` |
 | grok → claude | security-review | `claude-opus-4-8` |
 | grok → claude | summarize / health | `claude-haiku-4-5` |
-| grok → codex | implement | `gpt-5.5` @ medium |
+| grok → codex | implement | `gpt-5.3-codex-spark` @ high |
 | grok → codex | review | `codex-auto-review` @ high |
 | grok → codex | verify | `gpt-5.3-codex-spark` @ high |
-| codex → claude | second-opinion / reasoning / architecture | `claude-fable-5` |
+| codex → claude | second-opinion / reasoning / architecture | `claude-opus-4-8` |
 | codex → claude | security-review | `claude-opus-4-8` |
 | codex → grok | imagine / assets | `grok-build` @ high |
 | codex → grok | creative-review | `grok-build` @ xhigh, best-of-3 |
-| codex → grok | draft / task | `grok-composer-2.5-fast` @ medium |
+| codex → grok | task | `grok-build` @ medium |
+| codex → grok | draft | `grok-composer-2.5-fast` @ medium |
 
 ### Precedence
 
@@ -214,7 +214,7 @@ Every generated asset is copied into a dated gallery, never dumped into your wor
 
 **Claude -> Grok.** The slash command shells `node .../grok-companion.mjs imagine "$ARGUMENTS"`, which spawns your local `grok` in headless mode (`grok -p <prompt> --always-approve --output-format json`). Grok generates into its session directory; the companion copies the assets into the gallery and returns Grok's text and links verbatim.
 
-**Grok -> Claude.** The `claude-delegate` skill shells `node .../claude-companion.mjs "task" [flags]`, which runs `claude --model claude-sonnet-5 -p <task> --output-format json --permission-mode plan`. This uses your local login. (`--bare` is only used when you have explicitly configured API-key auth, because bare mode skips the keychain and OAuth.)
+**Grok -> Claude.** The `claude-delegate` skill shells `node .../claude-companion.mjs "task" [flags]`, which runs `claude --model claude-opus-4-8 -p <task> --output-format json --permission-mode plan`. This uses your local login. (`--bare` is only used when you have explicitly configured API-key auth, because bare mode skips the keychain and OAuth.)
 
 **Claude/Grok -> Codex.** `node .../codex-companion.mjs "task" [flags]` shells `codex exec -m <model> -c model_reasoning_effort=<effort> --sandbox read-only --skip-git-repo-check -C <cwd> <prompt>`. It shares the same loop guard, write gate, timeout, heartbeat, and job ledger as the other two companions.
 

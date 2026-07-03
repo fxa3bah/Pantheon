@@ -37,19 +37,19 @@ test('ROUTING_TABLE matrix: every (direction, taskClass) row resolves from the t
 test('spot-check literal expected model IDs for representative table rows', () => {
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'architecture', env: NO_ENV }).model,
-    'claude-fable-5'
+    'claude-opus-4-8'
   );
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'data-model', env: NO_ENV }).model,
-    'claude-sonnet-5'
+    'claude-opus-4-8'
   );
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'security-review', env: NO_ENV }).model,
     'claude-opus-4-8'
   );
   const implement = resolveModel({ direction: 'claude-to-codex', taskClass: 'implement', env: NO_ENV });
-  assert.equal(implement.model, 'gpt-5.5');
-  assert.equal(implement.effort, 'medium');
+  assert.equal(implement.model, 'gpt-5.3-codex-spark');
+  assert.equal(implement.effort, 'high');
 
   const imagine = resolveModel({ direction: 'claude-to-grok', taskClass: 'imagine', env: NO_ENV });
   assert.equal(imagine.model, 'grok-build');
@@ -57,6 +57,15 @@ test('spot-check literal expected model IDs for representative table rows', () =
 
   const creativeReview = resolveModel({ direction: 'claude-to-grok', taskClass: 'creative-review', env: NO_ENV });
   assert.equal(creativeReview.bestOfN, 3);
+});
+
+test('guard: neither the routing table nor the model tiers contain banned literals', () => {
+  const routingTableJson = JSON.stringify(ROUTING_TABLE);
+  const modelTiersJson = JSON.stringify(MODEL_TIERS);
+  for (const banned of ['claude-fable-5', 'claude-sonnet-5']) {
+    assert.ok(!routingTableJson.includes(banned), `ROUTING_TABLE must not contain "${banned}"`);
+    assert.ok(!modelTiersJson.includes(banned), `MODEL_TIERS must not contain "${banned}"`);
+  }
 });
 
 // -----------------------------------------------------------------------
@@ -276,14 +285,14 @@ test('[1m] context: claude agent with contextChars > 600000 gets the suffix and 
   assert.equal(result.escalated, 'context');
 });
 
-test('[1m] context: haiku special-case swaps to claude-sonnet-5[1m] under high context', () => {
+test('[1m] context: haiku special-case swaps to claude-opus-4-8[1m] under high context', () => {
   const result = resolveModel({
     direction: 'grok-to-claude',
     taskClass: 'summarize',
     contextChars: 700000,
     env: NO_ENV
   });
-  assert.equal(result.model, 'claude-sonnet-5[1m]');
+  assert.equal(result.model, 'claude-opus-4-8[1m]');
   assert.equal(result.escalated, 'context');
 });
 
@@ -294,7 +303,7 @@ test('[1m] context: codex and grok legs ignore contextChars — no suffix applie
     contextChars: 700000,
     env: NO_ENV
   });
-  assert.equal(codexResult.model, 'gpt-5.5');
+  assert.equal(codexResult.model, 'gpt-5.3-codex-spark');
   assert.ok(!codexResult.model.includes('[1m]'));
 
   const grokResult = resolveModel({
@@ -324,12 +333,12 @@ test('[1m] context: packet.budget.context === "1m" also triggers the suffix on a
 
 test('args: a claude row builds ["--model", <model>]', () => {
   const result = resolveModel({ direction: 'grok-to-claude', taskClass: 'architecture', env: NO_ENV });
-  assert.deepEqual(result.args, ['--model', 'claude-fable-5']);
+  assert.deepEqual(result.args, ['--model', 'claude-opus-4-8']);
 });
 
 test('args: a codex row builds ["-m", <model>, "-c", "model_reasoning_effort=<effort>"]', () => {
   const result = resolveModel({ direction: 'claude-to-codex', taskClass: 'implement', env: NO_ENV });
-  assert.deepEqual(result.args, ['-m', 'gpt-5.5', '-c', 'model_reasoning_effort=medium']);
+  assert.deepEqual(result.args, ['-m', 'gpt-5.3-codex-spark', '-c', 'model_reasoning_effort=high']);
 });
 
 test('args: grok creative-review includes ["--best-of-n", "3"]', () => {
@@ -362,11 +371,11 @@ test('classifyTask: subcommand "imagine" maps to imagine', () => {
   assert.equal(classifyTask('claude-to-grok', 'imagine', null), 'imagine');
 });
 
-test('classifyTask: codex-to-grok generic "task" resolves to the cheap text tier, not the health tier', () => {
+test('classifyTask: codex-to-grok generic "task" resolves to the grok-build task row, not the health tier', () => {
   const taskClass = classifyTask('codex-to-grok', 'task', null);
   assert.equal(taskClass, 'task');
   const result = resolveModel({ direction: 'codex-to-grok', taskClass, env: NO_ENV });
-  assert.equal(result.model, 'grok-composer-2.5-fast');
+  assert.equal(result.model, 'grok-build');
   assert.equal(result.effort, 'medium');
 });
 

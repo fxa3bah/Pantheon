@@ -90,7 +90,7 @@ asset paths, **copies them into the gallery**, prints clean text + clickable lin
 
 **Reverse (`claude-delegate …` from Grok):** Grok skill shells
 `node …/claude-companion.mjs "task" [flags]` → `runClaudeHeadless` spawns local-OAuth-safe
-`claude --model claude-sonnet-5 -p <task> --output-format json --permission-mode plan [sanitized flags]`
+`claude --model claude-opus-4-8 -p <task> --output-format json --permission-mode plan [sanitized flags]`
 → result + cost + session_id recorded in the same ledger. `--bare` is reserved for explicit API-key/settings auth.
 
 **Pantheon packets:** companions accept plain prompt strings by default. If the input is JSON with
@@ -245,3 +245,6 @@ match (`claude-sonnet-5`).
 
 **88 tests pass** (`node --test tests/*.test.mjs`), including new `tests/model-routing.test.mjs` and
 `tests/codex-guard.test.mjs`.
+
+**Default tiers updated 2026-07-03:** reasoning→claude-opus-4-8, coding→gpt-5.3-codex-spark/grok-build;
+Fable and Sonnet removed from the table (Grok 4.3 not exposed by local CLI, grok-build used).

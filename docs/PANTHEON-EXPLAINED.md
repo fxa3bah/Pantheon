@@ -28,8 +28,8 @@ Three safety rails keep this from being reckless: an assistant receiving delegat
 |---|---|---|
 | Claude → Grok | Generate an image | Grok Build (high effort) |
 | Claude → Grok | Multi-angle creative review | Grok Build (max effort, 3 takes) |
-| Claude → Codex | Implement a feature | GPT-5.5 (medium effort) |
-| Grok → Claude | Architecture / second opinion | Claude Fable 5 |
+| Claude → Codex | Implement a feature | GPT-5.3 Codex Spark (high effort) |
+| Grok → Claude | Architecture / second opinion | Claude Opus 4.8 |
 | Grok → Claude | Security review | Claude Opus 4.8 (always — never downgraded) |
 | Codex → Grok | Generate campaign assets | Grok Build (high effort) |
 
@@ -69,7 +69,7 @@ Routes to Grok Build at high effort. Grok's Imagine models do the generation; th
 ```
 claude-delegate review this data model for edge cases before I build the UI around it
 ```
-Routes to Claude Fable 5, Pantheon's architecture/second-opinion tier — Claude reasons through it read-only and hands the analysis back.
+Routes to Claude Opus 4.8, Pantheon's architecture/second-opinion tier — Claude reasons through it read-only and hands the analysis back.
 
 **Check that the whole mesh is actually alive:**
 ```

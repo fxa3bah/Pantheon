@@ -7,7 +7,7 @@
  * this shells the authenticated `claude` binary using its official headless mode.
  *
  * Recommended invocation for this local OAuth bridge:
- *   claude --model claude-sonnet-5 -p "task..." --output-format json --permission-mode plan
+ *   claude --model claude-opus-4-8 -p "task..." --output-format json --permission-mode plan
  *
  * Key flags supported:
  * - --bare : Only when API-key/settings auth is explicitly configured. Bare mode skips keychain/OAuth.
@@ -269,8 +269,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const { request, extra } = splitRequestAndExtra(process.argv.slice(2));
 
   if (!request) {
-    console.log('Usage: node claude-companion.mjs "task for Claude" [--model claude-sonnet-5 --permission-mode plan]');
-    console.log('Default bridge mode uses local OAuth/keychain auth: claude --model claude-sonnet-5 -p ... --output-format json --permission-mode plan');
+    console.log('Usage: node claude-companion.mjs "task for Claude" [--model claude-opus-4-8 --permission-mode plan]');
+    console.log('Default bridge mode uses local OAuth/keychain auth: claude --model claude-opus-4-8 -p ... --output-format json --permission-mode plan');
     process.exit(1);
   }
 
