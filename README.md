@@ -21,16 +21,31 @@ Pantheon is a mesh of six directions. Be honest about maturity before you instal
 
 | Direction | Maturity | How you use it |
 |---|---|---|
-| **Claude -> Grok** | Polished | `/grok-imagine`, `/grok-review` slash commands |
+| **Claude -> Grok** | Polished | `/grok-imagine`, `/grok-review`, `/grok:task` slash commands |
 | **Grok -> Claude** | Polished | `claude-delegate` skill + `claude-second-opinion` agent |
-| **Claude -> Codex** | Real | `node plugins/grok/scripts/codex-companion.mjs "task"` spawns `codex exec` directly |
+| **Claude -> Codex** | Real | `/grok:codex` slash command, or `node plugins/grok/scripts/codex-companion.mjs "task"` directly, spawns `codex exec` |
 | **Grok -> Codex** | Real | `codex-delegate` skill → the same `codex-companion.mjs` |
-| **Codex -> Claude** | Working | Codex shells `claude-companion.mjs` with a `packet.from: "codex"` handoff |
-| **Codex -> Grok** | Working | Codex shells `grok-companion.mjs` with a `packet.from: "codex"` handoff |
+| **Codex -> Claude** | Working | `codex-to-claude` skill (source in this repo) shells `claude-companion.mjs` with a `packet.from: "codex"` handoff |
+| **Codex -> Grok** | Working | `codex-to-grok` skill (source in this repo) shells `grok-companion.mjs` with a `packet.from: "codex"` handoff |
 
-The Claude and Grok legs are the most built-out (dedicated commands, a media gallery, a job ledger). The Codex legs share the same companions, ledger, and safety layer — `codex-companion.mjs` makes Claude/Grok → Codex a real spawned `codex exec`, not a stub — and are verified by the live health check below. Dedicated `/grok:*`-style slash commands for the Codex legs are still on the roadmap; for now they're invoked via `node` directly or through the skills above. The canonical routing rules live in [`docs/PANTHEON-OPTIMIZATION-PLAN.md`](./docs/PANTHEON-OPTIMIZATION-PLAN.md).
+The Claude and Grok legs are the most built-out (dedicated commands, a media gallery, a job ledger). The Codex legs share the same companions, ledger, and safety layer — `codex-companion.mjs` makes Claude/Grok → Codex a real spawned `codex exec`, not a stub — and are verified by the live health check below. Every direction now has a named, first-class trigger (see the table below); the Codex-initiated skills are source definitions here and only land in `~/.codex/` when you run the Codex-side install. The canonical routing rules live in [`docs/PANTHEON-OPTIMIZATION-PLAN.md`](./docs/PANTHEON-OPTIMIZATION-PLAN.md).
 
 You do not need all three agents. If you only have Claude Code and Grok, the headline image and review flows work fully on their own.
+
+### First-class trigger per direction
+
+| Direction | Initiator | First-class trigger |
+|---|---|---|
+| Claude -> Grok (visual) | Claude Code | `/grok-imagine` |
+| Claude -> Grok (review) | Claude Code | `/grok-review` |
+| Claude -> Grok (generic) | Claude Code | `/grok:task` |
+| Claude -> Codex | Claude Code | `/grok:codex` |
+| Grok -> Claude | Grok CLI | `claude-delegate` skill |
+| Grok -> Codex | Grok CLI | `codex-delegate` skill |
+| Codex -> Claude | Codex CLI | `codex-to-claude` skill |
+| Codex -> Grok | Codex CLI | `codex-to-grok` skill |
+
+The Codex-initiated skills (`codex-to-claude`, `codex-to-grok`) are source definitions in this repo under `skills/`. They install into the Codex home (`~/.codex/`) only when you explicitly run the Codex-side install — nothing is written there automatically.
 
 ---
 
@@ -190,6 +205,8 @@ For anything slow (video, a multi-agent review), add `--background`, then poll `
 |---|---|
 | `/grok-imagine <request> [--background\|--wait]` | Hand off any image or video task (stills, edits, variations, references, short video). Grok uses its Imagine models. |
 | `/grok-review [focus] [--background]` | Delegate a review or investigation. Grok runs multiple perspectives and returns one synthesized report. |
+| `/grok:task <request> [--background\|--wait]` | Hand a generic non-visual task to Grok Build. |
+| `/grok:codex <task> [--background\|--wait]` | Delegate implementation, build, verify, or review work to the local Codex CLI. |
 | `/grok:setup [--json]` | Check that the local `grok` binary and login are ready. |
 | `/grok:health [--json] [--live]` | Show Pantheon health across Grok, Claude, and Codex. `--live` runs the read-only handshakes. |
 | `/grok:status [job-id] [--json]` | List recent jobs (status, media count, cost) or show one. |
@@ -279,10 +296,9 @@ Architecture, invariants, and the full change log are in [`CLAUDE.md`](./CLAUDE.
 
 None of these block daily use; the mesh is functional today.
 
-1. More dedicated Codex commands to match the Claude and Grok surface.
-2. Session reuse, so "edit the previous image" keeps Grok's full context instead of starting cold.
-3. A gallery `index.json` manifest so status and a future viewer do not have to rescan disk.
-4. True token streaming if the current stderr heartbeat is not enough live feedback.
+1. Session reuse, so "edit the previous image" keeps Grok's full context instead of starting cold.
+2. A gallery `index.json` manifest so status and a future viewer do not have to rescan disk.
+3. True token streaming if the current stderr heartbeat is not enough live feedback.
 
 ---
 

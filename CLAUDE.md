@@ -59,21 +59,24 @@ echoed prompt or empty reply can never produce a false green).
 .claude-plugin/marketplace.json      # local marketplace manifest (name: pantheon)
 plugins/grok/
   .claude-plugin/plugin.json         # the installable plugin (name: grok); commands/agents auto-discovered
-  commands/                          # slash commands: imagine, review, setup, status, result, cancel (.md)
+  commands/                          # slash commands: imagine, review, task, codex, setup, health, status, result, cancel (.md)
   agents/grok-delegate.md            # proactive forwarder subagent
   prompts/imagine-system.md
   scripts/
     grok-companion.mjs               # FORWARD leg (Claude→Grok). Main entry for imagine/review/task/status/result/cancel/setup
-    claude-companion.mjs             # REVERSE leg (Grok→Claude). Shells local-OAuth-safe `claude --model … -p … --output-format json`
+    claude-companion.mjs             # REVERSE leg (Grok→Claude, Codex→Claude). Shells local-OAuth-safe `claude --model … -p … --output-format json`
     codex-companion.mjs              # CODEX leg (Claude→Codex, Grok→Codex). Shells `codex exec -m … -c model_reasoning_effort=… --sandbox read-only`
     lib/
       bridge-guard.mjs               # SAFETY layer: loop guard, write gate, timeout, heartbeat
       model-routing.mjs              # SINGLE SOURCE OF TRUTH for model IDs: ROUTING_TABLE, MODEL_TIERS, classifyTask(), resolveModel()
       state.mjs                      # canonical job ledger (single writer for BOTH directions)
       args.mjs                       # tiny arg helpers
-skills/                              # GROK-SIDE pieces (installed into ~/.grok, not the Claude plugin)
-  claude-delegate/SKILL.md
+skills/                              # GROK-SIDE + CODEX-SIDE pieces (source only here; installed into ~/.grok or ~/.codex on explicit install)
+  claude-delegate/SKILL.md           # Grok-initiated: Grok → Claude
+  codex-delegate/SKILL.md            # Grok-initiated: Grok → Codex
   grok-imagine-from-claude-feedback/SKILL.md
+  codex-to-claude/SKILL.md           # Codex-initiated: Codex → Claude
+  codex-to-grok/SKILL.md             # Codex-initiated: Codex → Grok
 agents/claude-second-opinion.md      # GROK-SIDE agent
 tests/*.test.mjs                     # node --test unit tests
 docs/BRIDGE-AUDIT.md                 # the independent audit + punch-list this work came from
@@ -250,3 +253,15 @@ match (`claude-sonnet-5`).
 Fable and Sonnet removed from the table (`grok-build` IS Grok 4.3 — xAI's Grok Build CLI exposes no separate `grok-4.3` slug, so grok-build covers the Grok reasoning+coding default).
 
 Sonnet 5 reintroduced as the balanced Claude tier (data-model + second-opinion, auto-escalating to Opus on risk); `[1m]` fallback back to sonnet.
+
+## Change log — 2026-07-03 (first-class triggers for all six directions)
+
+Added first-class commands/skills for all six directions (`/grok:codex`, `/grok:task`, `codex-to-claude`,
+`codex-to-grok`). New `plugins/grok/commands/codex.md` (Claude→Codex, builds a Pantheon packet with an
+inferred `implement|verify|review` lane and forwards to `codex-companion.mjs`) and
+`plugins/grok/commands/task.md` (Claude→Grok generic, forwards to `grok-companion.mjs task`). New
+Codex-initiated skill sources `skills/codex-to-claude/SKILL.md` and `skills/codex-to-grok/SKILL.md` —
+these are repo-only source definitions; they install into `~/.codex/` only on an explicit Codex-side
+install, mirroring how the Grok-side skills are symlinked into `~/.grok/`. No companion `.mjs`,
+`model-routing.mjs`, or tests were touched — this was command/skill/doc surface only. `README.md` and
+`docs/PANTHEON-EXPLAINED.md` now carry a per-direction first-class-trigger table.

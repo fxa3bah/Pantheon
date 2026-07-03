@@ -55,8 +55,23 @@ The commands you'll actually type, inside Claude Code:
 |---|---|
 | `/grok-imagine <request>` | Hand an image or video request to Grok |
 | `/grok-review <focus>` | Get a multi-perspective review or investigation from Grok |
+| `/grok:task <request>` | Hand a generic non-visual task to Grok |
+| `/grok:codex <task>` | Delegate implementation, build, verify, or review work to Codex |
 | `/grok:health --json --live` | Confirm every direction of the mesh is actually working |
 | `/grok:status` | See recent jobs and their state |
+
+Every one of the six directions has a named, first-class trigger:
+
+| Direction | Initiator | First-class trigger |
+|---|---|---|
+| Claude -> Grok (visual) | Claude Code | `/grok-imagine` |
+| Claude -> Grok (review) | Claude Code | `/grok-review` |
+| Claude -> Grok (generic) | Claude Code | `/grok:task` |
+| Claude -> Codex | Claude Code | `/grok:codex` |
+| Grok -> Claude | Grok CLI | `claude-delegate` skill |
+| Grok -> Codex | Grok CLI | `codex-delegate` skill |
+| Codex -> Claude | Codex CLI | `codex-to-claude` skill |
+| Codex -> Grok | Codex CLI | `codex-to-grok` skill |
 
 ## Examples you can run
 
