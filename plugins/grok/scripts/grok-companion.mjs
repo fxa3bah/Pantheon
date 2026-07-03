@@ -21,6 +21,7 @@ import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, MAX
 import { upsertJob, readJob, listJobs } from './lib/state.mjs';
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { resolveModel, classifyTask, MODEL_TIERS, ROUTING_TABLE } from './lib/model-routing.mjs';
+import { withCompliance } from './lib/compliance.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
