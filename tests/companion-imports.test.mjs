@@ -19,7 +19,8 @@ const COMPANIONS = ['claude-companion.mjs', 'grok-companion.mjs', 'codex-compani
 const SHARED_SYMBOLS = [
   'withCompliance', 'resolveModel', 'classifyTask', 'parsePantheonInput',
   'packetJobFields', 'upsertJob', 'assertHopAllowed', 'sanitizeClaudeArgs',
-  'sanitizeCodexArgs', 'childEnv', 'armTimeout', 'startHeartbeat'
+  'sanitizeCodexArgs', 'childEnv', 'armTimeout', 'startHeartbeat',
+  'makeJobId', 'saveJob', 'splitRequestAndExtra'
 ];
 
 for (const file of COMPANIONS) {

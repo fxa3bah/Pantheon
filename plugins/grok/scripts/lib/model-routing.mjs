@@ -6,6 +6,17 @@
 // model rename/retirement is a one-file edit.
 // ESM only, no external deps, no API keys. Tables and returned objects are
 // frozen (deep-frozen for the tables) — pure functions only, nothing mutates.
+//
+// Packet field extractors + nonEmptyString are owned by pantheon-packet.mjs (the
+// packet schema's home). Import them rather than re-implementing, so the two
+// modules can't drift. pantheon-packet has no imports, so this edge is acyclic.
+import {
+  packetModel,
+  packetEffort,
+  packetBestOfN,
+  nonEmptyString
+} from './pantheon-packet.mjs';
+
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -13,10 +24,6 @@ function deepFreeze(value) {
   }
   return value;
 }
-function nonEmptyString(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 // Model tiers per agent (for health reporting).
 export const MODEL_TIERS = deepFreeze({
   claude: {
@@ -89,6 +96,9 @@ const MECHANICAL_TASK_CLASSES = new Set(['verify', 'summarize', 'draft', 'health
 const RISK_KEYWORDS = [
   'security', 'auth', 'payment', 'credential', 'secret', 'data-loss', 'migration', 'destructive', 'production'
 ];
+// Pre-compiled once at module load; keywordHit() previously rebuilt these RegExp
+// objects on every call. `\w*` stem-matches (auth → authentication, etc.).
+const RISK_KEYWORD_RES = RISK_KEYWORDS.map((kw) => new RegExp(`\\b${kw}\\w*`, 'i'));
 
 function agentFromDirection(direction) {
   if (typeof direction !== 'string') return null;
@@ -144,21 +154,8 @@ export function classifyTask(direction, subcommand, packet = null) {
 }
 
 // -- resolveModel --
-function packetModelOf(packet) {
-  if (!packet || packet.model == null) return null;
-  if (typeof packet.model === 'string') return packet.model.trim() || null;
-  if (typeof packet.model === 'object') return packet.model.id || packet.model.name || packet.model.model || null;
-  return null;
-}
-function packetEffortOf(packet) {
-  if (!packet || !nonEmptyString(packet.effort)) return null;
-  return packet.effort.trim();
-}
-function packetBestOfNOf(packet) {
-  if (!packet || packet.best_of_n == null) return null;
-  const n = Number(packet.best_of_n);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
-}
+// (packet extractors packetModel/packetEffort/packetBestOfN are imported from
+// pantheon-packet.mjs — see the import at the top of this file.)
 function agentDefaultEffort(agent) {
   const def = MODEL_TIERS[agent]?.default;
   return def && typeof def === 'object' && 'effort' in def ? def.effort : null;
@@ -180,7 +177,7 @@ function keywordHit(packet) {
   // auth(entication|orization), migration(s), etc. Escalation only ever
   // upgrades the model tier, so mild over-matching here is safe and
   // preferred over missing a real security phrasing.
-  return RISK_KEYWORDS.some((kw) => new RegExp(`\\b${kw}\\w*`, 'i').test(haystack));
+  return RISK_KEYWORD_RES.some((re) => re.test(haystack));
 }
 function escalationReason(attempt, packet) {
   if (attempt >= 2) return 'retry';
@@ -272,11 +269,11 @@ export function resolveModel({
       model: tableRow.model, effort: tableRow.effort ?? null, bestOfN: tableRow.bestOfN ?? null
     }));
   } else {
-    const pModel = packetModelOf(packet);
+    const pModel = packetModel(packet);
     if (nonEmptyString(pModel)) {
       model = pModel;
-      effort = packetEffortOf(packet) ?? tableRow?.effort ?? null;
-      bestOfN = packetBestOfNOf(packet);
+      effort = packetEffort(packet) ?? tableRow?.effort ?? null;
+      bestOfN = packetBestOfN(packet);
       source = 'packet';
     } else {
       const envModel = envModelFor(agent, env);

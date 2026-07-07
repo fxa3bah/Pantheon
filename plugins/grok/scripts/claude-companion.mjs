@@ -29,10 +29,8 @@ import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
 import { withCompliance } from './lib/compliance.mjs';
 import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.mjs';
+import { makeJobId, splitRequestAndExtra, saveJob } from './lib/companion-common.mjs';
 
-function generateJobId() {
-  return 'claude-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-}
 
 const VALUE_FLAGS = new Set([
   '--allowedTools',
@@ -76,38 +74,6 @@ export function resolveClaudeBinary() {
   return 'claude';
 }
 
-function splitRawArgumentString(raw) {
-  return String(raw || '').match(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|\S+/g)?.map(part => {
-    if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
-      return part.slice(1, -1);
-    }
-    return part;
-  }) || [];
-}
-
-function normalizeArgv(args) {
-  if (args.length === 1 && /\s/.test(args[0])) return splitRawArgumentString(args[0]);
-  return args;
-}
-
-function splitRequestAndExtra(args) {
-  const tokens = normalizeArgv(args);
-  const request = [];
-  const extra = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const tok = tokens[i];
-    if (tok.startsWith('--')) {
-      extra.push(tok);
-      const name = tok.includes('=') ? tok.slice(0, tok.indexOf('=')) : tok;
-      if (!tok.includes('=') && VALUE_FLAGS.has(name) && tokens[i + 1] != null) {
-        extra.push(tokens[++i]);
-      }
-    } else {
-      request.push(tok);
-    }
-  }
-  return { request: request.join(' ').trim(), extra };
-}
 
 function stripFlag(args, flagName) {
   const out = [];
@@ -199,10 +165,9 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
 
 // Persistence delegated to the shared ledger (lib/state.mjs); direction tags
 // this leg so a unified `/grok:status` can show both directions.
-const saveJob = (jobId, direction, data) => upsertJob(jobId, { direction, ...data });
 
 export async function delegateToClaude(request, extraCliArgs = []) {
-  const jobId = generateJobId();
+  const jobId = makeJobId('claude');
   console.log(`[pantheon] Delegating to local Claude Code CLI (job ${jobId})...`);
   const parsedInput = parsePantheonInput(request);
   const prompt = parsedInput.prompt;
@@ -267,7 +232,7 @@ export async function delegateToClaude(request, extraCliArgs = []) {
 
 // Direct CLI usage (for testing the reverse bridge from a Grok skill or terminal)
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { request, extra } = splitRequestAndExtra(process.argv.slice(2));
+  const { request, extra } = splitRequestAndExtra(process.argv.slice(2), VALUE_FLAGS);
 
   if (!request) {
     console.log('Usage: node claude-companion.mjs "task for Claude" [--model claude-opus-4-8 --permission-mode plan]');

@@ -22,6 +22,7 @@ import { upsertJob, readJob, listJobs } from './lib/state.mjs';
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { resolveModel, classifyTask, MODEL_TIERS, ROUTING_TABLE } from './lib/model-routing.mjs';
 import { withCompliance } from './lib/compliance.mjs';
+import { makeJobId, saveJob } from './lib/companion-common.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -34,10 +35,6 @@ const MEDIA_ROOT = process.env.GROK_BRIDGE_MEDIA_DIR || path.join(process.env.HO
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
-}
-
-function generateJobId() {
-  return 'grok-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
 function spawnSyncSafe(cmd, args, opts = {}) {
@@ -177,7 +174,6 @@ function extractCost(parsed) {
 
 // Job persistence is delegated to the shared ledger (lib/state.mjs) so both
 // directions of the bridge write one consistent schema.
-const saveJob = (jobId, direction, data) => upsertJob(jobId, { direction, ...data });
 const loadJob = (jobId) => readJob(jobId);
 const listRecentJobs = (limit = 5) => listJobs(limit);
 
@@ -267,7 +263,7 @@ async function cmdImagine(rawArgs) {
   const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: prompt.length });
   const routingFields = routingFieldsFor(routed);
 
-  const jobId = generateJobId();
+  const jobId = makeJobId('grok');
   const date = new Date().toISOString().slice(0, 10);
   const galleryDir = path.join(MEDIA_ROOT, date, jobId);
   ensureDir(galleryDir);
@@ -370,7 +366,7 @@ async function cmdReview(rawArgs) {
   const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: prompt.length });
   const routingFields = routingFieldsFor(routed);
 
-  const jobId = generateJobId();
+  const jobId = makeJobId('grok');
   console.log(`[pantheon] Starting multi-agent review job ${jobId}...`);
   saveJob(jobId, direction, { type: 'review', request: rawArgs, status: 'running', ...routingFields, ...packetJobFields(parsedInput) });
 
@@ -399,7 +395,7 @@ async function cmdTask(rawArgs) {
   const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: requestText.length });
   const routingFields = routingFieldsFor(routed);
 
-  const jobId = generateJobId();
+  const jobId = makeJobId('grok');
   console.log(`[pantheon] Starting delegated task ${jobId}...`);
   saveJob(jobId, direction, { type: 'task', request: rawArgs, status: 'running', ...routingFields, ...packetJobFields(parsedInput) });
   try {

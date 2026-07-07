@@ -37,6 +37,7 @@ import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
 import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, sanitizeCodexArgs } from './lib/bridge-guard.mjs';
 import { withCompliance } from './lib/compliance.mjs';
+import { makeJobId, splitRequestAndExtra, saveJob } from './lib/companion-common.mjs';
 
 export function resolveCodexBinary() {
   const which = process.platform === 'win32' ? 'where' : 'which';
@@ -58,8 +59,9 @@ export function resolveCodexBinary() {
   return 'codex'; // assume PATH after `codex` install
 }
 
+// Public wrapper preserved for API compatibility; delegates to the shared core.
 export function generateJobId() {
-  return 'codex-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  return makeJobId('codex');
 }
 
 const VALUE_FLAGS = new Set([
@@ -192,7 +194,6 @@ async function runCodexHeadless(prompt, extraArgs = [], jobId, options = {}) {
   });
 }
 
-const saveJob = (jobId, direction, data) => upsertJob(jobId, { direction, ...data });
 
 export async function delegateToCodex(request, extraCliArgs = []) {
   const jobId = generateJobId();
@@ -241,41 +242,9 @@ export async function delegateToCodex(request, extraCliArgs = []) {
 
 // ---- CLI entry (testable helpers stay pure/exported above) -----------------
 
-function splitRawArgumentString(raw) {
-  return String(raw || '').match(/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|\S+/g)?.map(part => {
-    if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
-      return part.slice(1, -1);
-    }
-    return part;
-  }) || [];
-}
-
-function normalizeArgv(args) {
-  if (args.length === 1 && /\s/.test(args[0])) return splitRawArgumentString(args[0]);
-  return args;
-}
-
-function splitRequestAndExtra(args) {
-  const tokens = normalizeArgv(args);
-  const request = [];
-  const extra = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const tok = tokens[i];
-    if (tok.startsWith('-')) {
-      extra.push(tok);
-      const name = tok.includes('=') ? tok.slice(0, tok.indexOf('=')) : tok;
-      if (!tok.includes('=') && VALUE_FLAGS.has(name) && tokens[i + 1] != null) {
-        extra.push(tokens[++i]);
-      }
-    } else {
-      request.push(tok);
-    }
-  }
-  return { request: request.join(' ').trim(), extra };
-}
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { request, extra } = splitRequestAndExtra(process.argv.slice(2));
+  const { request, extra } = splitRequestAndExtra(process.argv.slice(2), VALUE_FLAGS, '-');
 
   if (!request) {
     console.log('Usage: node codex-companion.mjs "task for Codex" [-m gpt-5.5 -c model_reasoning_effort=medium --sandbox read-only]');

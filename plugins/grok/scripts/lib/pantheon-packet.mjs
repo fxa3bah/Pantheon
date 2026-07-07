@@ -6,7 +6,7 @@
 
 const REQUIRED_PACKET_FIELDS = ['from', 'to', 'lane', 'objective'];
 
-function nonEmptyString(value) {
+export function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 

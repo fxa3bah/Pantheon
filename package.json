@@ -18,7 +18,7 @@
   },
   "scripts": {
     "bump-version": "node scripts/bump-version.mjs",
-    "test": "node --test tests/*.test.mjs || echo 'tests not yet wired'"
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

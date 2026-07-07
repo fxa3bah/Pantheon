@@ -18,6 +18,9 @@ function posNum(raw, fallback) {
 // NaN/garbage must never silently disable the guard or zero the timeout.
 export const MAX_HOPS = posNum(process.env.GROK_BRIDGE_MAX_HOPS, 2);
 export const DEFAULT_TIMEOUT_MS = posNum(process.env.GROK_BRIDGE_TIMEOUT_MS, 5 * 60 * 1000);
+// Grace period after SIGTERM before escalating to SIGKILL, for a child that
+// ignores the polite signal (stuck in uninterruptible work / signal-swallowing).
+export const SIGKILL_GRACE_MS = posNum(process.env.GROK_BRIDGE_SIGKILL_GRACE_MS, 5000);
 
 /** Current bridge depth (0 when invoked directly by a human). */
 export function currentHop() {
@@ -224,11 +227,17 @@ export function sanitizeCodexArgs(extraArgs = []) {
  * onTimeout(err). Auto-clears on close/error. Returns the timer handle.
  */
 export function armTimeout(child, onTimeout, ms = DEFAULT_TIMEOUT_MS) {
+  let killTimer = null;
   const timer = setTimeout(() => {
     try { child.kill('SIGTERM'); } catch {}
+    // Escalate: if the child hasn't exited SIGKILL_GRACE_MS after SIGTERM, force-kill
+    // it so a signal-ignoring child can't hang the bridge past its timeout. unref()
+    // so this timer never keeps the event loop alive on its own.
+    killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, SIGKILL_GRACE_MS);
+    if (killTimer.unref) killTimer.unref();
     onTimeout(new Error(`[bridge] child timed out after ${ms}ms (override GROK_BRIDGE_TIMEOUT_MS).`));
   }, ms);
-  const clear = () => clearTimeout(timer);
+  const clear = () => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); };
   child.on('close', clear);
   child.on('error', clear);
   return timer;
