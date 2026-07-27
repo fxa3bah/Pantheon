@@ -424,3 +424,34 @@ don't-pick-a-model, the gate status, and the command. `allowed-tools` narrowed t
 
 Skill examples in `codex-to-grok` and `codex-to-claude` use `--lane` too. **155 tests pass**; `--lane
 security` verified to still resolve to the force-pinned `claude-opus-4-8`.
+
+## Change log — 2026-07-27d (the two failures that cost a real audit)
+
+Both bridge failures reported from a live delegated audit were real, and both are fixed.
+
+**1. The Codex leg returned only the LAST assistant message.** `parseCodexOutput` used the
+`-o/--output-last-message` file unconditionally as `result`. That file holds exactly one message —
+Codex's final one. A long task emits many. Replaying the captured 1.7 MB stream from the real run
+(`.grok-bridge/codex-ms2yq7k5-9gy8p9.json`): **15 `agent_message` items, 7382 chars total, the bridge
+returned the final 4308 — 41% silently discarded.** When Codex ends on a short sign-off the caller
+gets a few hundred bytes and nothing indicates loss; that is the reported 348-byte return. Short
+answers hid the bug completely, because there the last message *is* the whole answer, which is why
+every health check and round-trip in testing looked fine.
+
+The result is now reconstructed by joining every `agent_message` from the `--json` stream in order;
+`-o` is a fallback for an unparseable stream. `messageCount` and `droppedByLastMessageOnly` are
+returned so truncation can never be silent again, and `item.completed`-carried `error` items are
+surfaced instead of swallowed (the same run had 3 nobody saw).
+
+**2. `DEFAULT_TIMEOUT_MS` 5m → 15m.** A deep audit or multi-file review routinely runs 6-12 minutes;
+every substantial hand-off in this repo's own history had to override `GROK_BRIDGE_TIMEOUT_MS` to
+survive. A default that callers must always override is the wrong default. The SIGKILL escalation
+still bounds a genuinely hung child.
+
+**159 tests pass**, including a regression that pins the multi-message case, the single-message case
+(the one that hid it), the unparseable-stream fallback, and error-item surfacing.
+
+**Note on bypassing the bridge.** Running `grok -p` / `codex exec` directly and redirecting stdout is
+a sound workaround for payload size, but it runs *outside* every guarantee this repo provides: no
+loop guard, no write gate, no ledger entry, no timeout. Worth knowing especially because a shell
+function may inject `--dangerously-bypass-approvals-and-sandbox` into a bare `codex` invocation.

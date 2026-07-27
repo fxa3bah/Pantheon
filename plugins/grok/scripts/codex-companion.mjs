@@ -21,10 +21,11 @@
  *
  * `codex exec --json` streams JSONL events (thread.started, turn.started,
  * item.*, turn.completed/turn.failed, error) rather than one parseable JSON
- * blob, and carries no cost field. `-o/--output-last-message <file>` is the
- * CLI's own documented way to get the clean final answer, so it is used as
- * the primary result source; the JSONL stream is only mined for session id
- * (thread_id) and error surfacing.
+ * blob, and carries no cost field. The result is reconstructed by joining every
+ * `agent_message` item from that stream, in order. `-o/--output-last-message`
+ * is a FALLBACK only: it holds just the LAST assistant message, so using it as
+ * the primary source silently truncated any multi-part answer (see
+ * parseCodexOutput for the measured case).
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -123,6 +124,8 @@ export function routingFieldsFor(routed) {
 export function parseCodexEvents(stdoutText) {
   let sessionId = null;
   let errorMessage = null;
+  const agentMessages = [];
+  const itemErrors = [];
   for (const line of String(stdoutText || '').split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed[0] !== '{') continue;
@@ -132,29 +135,63 @@ export function parseCodexEvents(stdoutText) {
     if (evt.type === 'thread.started' && evt.thread_id) sessionId = evt.thread_id;
     if (evt.type === 'error' && evt.message) errorMessage = evt.message;
     if (evt.type === 'turn.failed' && evt.error?.message) errorMessage = evt.error.message;
+
+    // Every assistant message Codex emits during the turn, in order. A long
+    // task (an audit, a multi-part review) produces MANY of these; only
+    // harvesting the last one throws the rest away. See parseCodexOutput.
+    if (evt.type === 'item.completed') {
+      const item = evt.item || {};
+      const kind = item.item_type || item.type;
+      if (kind === 'agent_message' || kind === 'assistant_message') {
+        const text = item.text ?? item.content ?? '';
+        if (typeof text === 'string' && text.trim()) agentMessages.push(text);
+      }
+      if (kind === 'error' && (item.message || item.text)) {
+        itemErrors.push(item.message || item.text);
+      }
+    }
   }
-  return { sessionId, errorMessage };
+  return { sessionId, errorMessage, agentMessages, itemErrors };
 }
 
-// Combines the -o last-message file (preferred, clean text) with a best-effort
-// JSON.parse of raw stdout (per Pantheon convention; almost always falls back
-// to { result } here since stdout is JSONL, not one blob). cost/session_id are
-// null when absent — codex exec exposes no per-turn cost today.
+// Reconstructs Codex's FULL answer from the --json event stream.
+//
+// This used to return `lastMessage` (the `-o/--output-last-message` file)
+// unconditionally, but that file holds only Codex's LAST assistant message. A
+// long task emits many: one real audit run produced 15 agent_message items
+// totalling 7382 chars, and the bridge returned the final 4308 — 41% silently
+// discarded. When Codex ends with a short sign-off ("Done — see findings
+// above") the caller gets a few hundred bytes and no indication anything was
+// lost. Short answers hid this completely, because there the last message IS
+// the whole answer.
+//
+// So: join every agent_message in order, and keep lastMessage only as a
+// fallback for a stream we could not parse.
 export function parseCodexOutput(stdout, lastMessage) {
-  const { sessionId, errorMessage } = parseCodexEvents(stdout);
+  const { sessionId, errorMessage, agentMessages, itemErrors } = parseCodexEvents(stdout);
   let parsed;
   try {
     parsed = JSON.parse(stdout);
   } catch {
     parsed = { result: lastMessage || stdout };
   }
-  const result = lastMessage || parsed.result || parsed.text || stdout;
+
+  const joined = agentMessages.join('\n\n').trim();
+  const result = joined || lastMessage || parsed.result || parsed.text || stdout;
+
   return {
     parsed,
     result,
+    messageCount: agentMessages.length,
+    // Truncation is now impossible to hit silently: if the last message alone
+    // would have been the answer, say how much more the full stream carried.
+    droppedByLastMessageOnly: joined && lastMessage
+      ? Math.max(0, joined.length - lastMessage.length)
+      : 0,
     session_id: parsed.session_id || parsed.sessionId || sessionId || null,
     cost: parsed.total_cost_usd ?? parsed.cost ?? null,
-    errorMessage,
+    errorMessage: errorMessage || (itemErrors.length ? itemErrors.join('; ') : null),
+    itemErrors,
   };
 }
 

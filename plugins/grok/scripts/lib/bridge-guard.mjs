@@ -17,7 +17,12 @@ function posNum(raw, fallback) {
 
 // NaN/garbage must never silently disable the guard or zero the timeout.
 export const MAX_HOPS = posNum(process.env.GROK_BRIDGE_MAX_HOPS, 2);
-export const DEFAULT_TIMEOUT_MS = posNum(process.env.GROK_BRIDGE_TIMEOUT_MS, 5 * 60 * 1000);
+// 15 minutes. Was 5, which is under the runtime of ordinary delegated work: a
+// deep audit or a multi-file review routinely runs 6-12 minutes, and every
+// substantial hand-off had to override this env var to survive. A default that
+// callers must always override is the wrong default. The SIGKILL escalation
+// below still bounds a genuinely hung child.
+export const DEFAULT_TIMEOUT_MS = posNum(process.env.GROK_BRIDGE_TIMEOUT_MS, 15 * 60 * 1000);
 // Grace period after SIGTERM before escalating to SIGKILL, for a child that
 // ignores the polite signal (stuck in uninterruptible work / signal-swallowing).
 export const SIGKILL_GRACE_MS = posNum(process.env.GROK_BRIDGE_SIGKILL_GRACE_MS, 5000);

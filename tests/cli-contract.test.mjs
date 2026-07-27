@@ -21,6 +21,7 @@ import { splitRequestAndExtra, extractCompanionFlags, buildPayload } from '../pl
 import { parsePantheonInput } from '../plugins/grok/scripts/lib/pantheon-packet.mjs';
 import { sanitizeClaudeArgs, sanitizeCodexArgs, sanitizeGrokArgs, childEnv } from '../plugins/grok/scripts/lib/bridge-guard.mjs';
 import { isTrustedMediaPath, filterTrustedMedia } from '../plugins/grok/scripts/grok-companion.mjs';
+import { parseCodexOutput } from '../plugins/grok/scripts/codex-companion.mjs';
 import { isValidJobId } from '../plugins/grok/scripts/lib/state.mjs';
 
 const NO_ENV = {};
@@ -453,4 +454,53 @@ test('a lane routes to the intended task class end to end', () => {
   assert.equal(taskClass, 'implement');
   const r = resolveModel({ direction: 'claude-to-codex', taskClass, packet, env: NO_ENV });
   assert.equal(r.model, 'gpt-5.3-codex-spark');
+});
+
+// ---------------------------------------------------------------------------
+// 10. Codex result reconstruction
+// ---------------------------------------------------------------------------
+
+const codexEvent = (text) => JSON.stringify({
+  type: 'item.completed', item: { item_type: 'agent_message', text }
+});
+
+test('a multi-message codex answer is returned in full, not just the last message', () => {
+  // Regression: parseCodexOutput returned the -o last-message file
+  // unconditionally, which holds ONLY the final assistant message. A real audit
+  // run emitted 15 messages totalling 7382 chars and the bridge returned 4308.
+  const stdout = [
+    JSON.stringify({ type: 'thread.started', thread_id: 't1' }),
+    codexEvent('Finding 1: the important one'),
+    codexEvent('Finding 2: the other important one'),
+    codexEvent('Done - see findings above.'),
+  ].join('\n');
+
+  const r = parseCodexOutput(stdout, 'Done - see findings above.');
+  assert.equal(r.messageCount, 3);
+  assert.match(r.result, /Finding 1/);
+  assert.match(r.result, /Finding 2/);
+  assert.ok(r.droppedByLastMessageOnly > 0, 'should report what last-message-only would have lost');
+  assert.equal(r.session_id, 't1');
+});
+
+test('a single-message answer is unchanged (why this hid for so long)', () => {
+  const stdout = codexEvent('OK');
+  const r = parseCodexOutput(stdout, 'OK');
+  assert.equal(r.result, 'OK');
+  assert.equal(r.droppedByLastMessageOnly, 0);
+});
+
+test('an unparseable stream still falls back to the last-message file', () => {
+  const r = parseCodexOutput('not json at all', 'the answer');
+  assert.equal(r.result, 'the answer');
+});
+
+test('error items in the stream are surfaced, not swallowed', () => {
+  const stdout = [
+    JSON.stringify({ type: 'item.completed', item: { item_type: 'error', message: 'tool blew up' } }),
+    codexEvent('partial answer'),
+  ].join('\n');
+  const r = parseCodexOutput(stdout, 'partial answer');
+  assert.deepEqual(r.itemErrors, ['tool blew up']);
+  assert.match(r.errorMessage, /tool blew up/);
 });
