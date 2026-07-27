@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "grok",
-      "description": "Bridge to Grok Build: /grok-imagine for all image+video generation/editing, /grok-review for multi-agent delegation. Local OAuth only, no API keys.",
+      "description": "Bridge to Grok Build: /grok:imagine for all image+video generation/editing, /grok:review for multi-agent delegation. Local OAuth only, no API keys.",
       "version": "0.1.0",
       "author": {
         "name": "Fahd Akhtar"

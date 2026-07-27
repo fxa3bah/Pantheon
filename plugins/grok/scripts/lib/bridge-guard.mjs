@@ -304,7 +304,7 @@ const GROK_STRIPPED_BOOLEANS = new Set(['--always-approve']);
 
 /**
  * Filter caller-supplied Grok CLI flags and decide whether this hop may execute
- * tools. Media generation (`/grok-imagine`, `assets`) genuinely needs to run
+ * tools. Media generation (`/grok:imagine`, `assets`) genuinely needs to run
  * image tools and write files, so it keeps `--always-approve`; every analysis
  * lane (task, review, health) is pinned to a read-only tool allowlist.
  * Returns { args, gated, notes } — never mutates input.
@@ -339,7 +339,7 @@ export function sanitizeGrokArgs(extraArgs = [], { needsMedia = false } = {}) {
   if (needsMedia) {
     // Image/video generation cannot run under a read-only tool set. This lane
     // is still gated in the sense that caller flags were stripped above, but it
-    // does execute tools — that is the whole point of /grok-imagine.
+    // does execute tools — that is the whole point of /grok:imagine.
     out.push('--always-approve');
     notes.push('media lane: tool execution allowed (image/video generation)');
     return { args: out, gated: false, notes };

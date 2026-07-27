@@ -9,7 +9,7 @@ This is a punch-list for Grok to implement. Each item: **current behavior → de
 
 | Leg | State |
 |-----|-------|
-| Claude → Grok (`/grok-imagine`, `/grok-review`) | ✅ Installed & verified working (generated a real 1248×832 image). |
+| Claude → Grok (`/grok:imagine`, `/grok:review`) | ✅ Installed & verified working (generated a real 1248×832 image). |
 | Grok → Claude (`claude-delegate` skill, `claude-second-opinion` agent) | ❌ **Files exist in repo but NOT installed into `~/.grok/`.** Reverse leg is dead until deployed. |
 
 ---
@@ -73,7 +73,7 @@ This is a punch-list for Grok to implement. Each item: **current behavior → de
 - **Optional convenience:** `--open` flag → `open <file>` (macOS Quick Look / Preview) after generation. Off by default.
 
 ### Net result for you
-After `/grok-imagine ...` you get: a one-line clickable `file://` link + a markdown embed, and the file lives in a dated gallery you can browse in Finder — no repo clutter, nothing to hunt for.
+After `/grok:imagine ...` you get: a one-line clickable `file://` link + a markdown embed, and the file lives in a dated gallery you can browse in Finder — no repo clutter, nothing to hunt for.
 
 ---
 
@@ -109,7 +109,7 @@ A two-way bridge can ping-pong: Claude→Grok→Claude→… Add a **hop counter
 1. **Stream progress.** Both legs block silently for 30–120s. Use `--output-format streaming-json` and surface incremental status (or at least a spinner/"grok is generating…") so a hand-off doesn't look hung.
 2. **Single dedicated media dir + manifest.** Maintain `~/Pictures/grok-imagine/index.json` (job id, prompt, paths, ts) so `/grok:status` and a future gallery can list everything without rescanning disk.
 3. **Skip the second-LLM tax on trivial routing.** The `grok-delegate` subagent + the command both wrap the same call; for the common path, let the slash command shell the script directly (it already does) and reserve the subagent for proactive auto-delegation only.
-4. **Reuse sessions for iteration.** `image_edit`/"make the previous one more dramatic" should pass grok's `--continue`/session id (the JSON returns `sessionId`) so references and context persist instead of starting cold each time. Wire `/grok-imagine --continue`.
+4. **Reuse sessions for iteration.** `image_edit`/"make the previous one more dramatic" should pass grok's `--continue`/session id (the JSON returns `sessionId`) so references and context persist instead of starting cold each time. Wire `/grok:imagine --continue`.
 5. **Unify the job ledger.** Both directions already write to `.grok-bridge/` — good. Standardize one schema (`id, direction, type, prompt, media[], session_id, cost, hop, ts, status`) and have `state.mjs` be the single writer for both companions (currently `grok-companion` has its own inline `saveJob` and ignores `lib/state.mjs`).
 6. **Surface cost.** grok/claude JSON returns cost/usage — store and optionally print it; useful given your Haiku-only/cost-control posture.
 7. **Make paths absolute everywhere.** `--cwd process.cwd()` + relative media reporting breaks when the user is in a different dir than where files land. Always report absolute paths.

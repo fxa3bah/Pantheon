@@ -55,8 +55,8 @@ The commands you'll actually type, inside Claude Code:
 
 | Command | What it does |
 |---|---|
-| `/grok-imagine <request>` | Hand an image or video request to Grok |
-| `/grok-review <focus>` | Get a multi-perspective review or investigation from Grok |
+| `/grok:imagine <request>` | Hand an image or video request to Grok |
+| `/grok:review <focus>` | Get a multi-perspective review or investigation from Grok |
 | `/grok:task <request>` | Hand a generic non-visual task to Grok |
 | `/grok:codex <task>` | Delegate implementation, build, verify, or review work to Codex |
 | `/grok:health --json --live` | Confirm every direction of the mesh is actually working |
@@ -66,8 +66,8 @@ Every one of the six directions has a named, first-class trigger:
 
 | Direction | Initiator | First-class trigger |
 |---|---|---|
-| Claude -> Grok (visual) | Claude Code | `/grok-imagine` |
-| Claude -> Grok (review) | Claude Code | `/grok-review` |
+| Claude -> Grok (visual) | Claude Code | `/grok:imagine` |
+| Claude -> Grok (review) | Claude Code | `/grok:review` |
 | Claude -> Grok (generic) | Claude Code | `/grok:task` |
 | Claude -> Codex | Claude Code | `/grok:codex` |
 | Grok -> Claude | Grok CLI | `claude-delegate` skill |
@@ -79,7 +79,7 @@ Every one of the six directions has a named, first-class trigger:
 
 **Generate an image:**
 ```
-/grok-imagine a linen throw pillow on a made bed, soft morning light, 3:2
+/grok:imagine a linen throw pillow on a made bed, soft morning light, 3:2
 ```
 Routes to Grok Build at high effort. Grok's Imagine models do the generation; the finished file lands as a clickable link in your session.
 
@@ -100,4 +100,4 @@ Runs a real handshake across every direction — each agent has to compute and r
 {"pantheon_packet": true, "from": "grok", "to": "claude", "lane": "security",
  "objective": "Review the new payment webhook handler for auth bypass risks."}
 ```
-A structured handoff like this — sent to Claude with "payment"/"auth" in the objective, or a `security` lane — auto-pins to Claude Opus 4.8, Pantheon's deepest tier, and that pin can't be downgraded by the request itself. Plain-text `/grok-review` requests don't carry this scan; it's specific to structured handoffs.
+A structured handoff like this — sent to Claude with "payment"/"auth" in the objective, or a `security` lane — auto-pins to Claude Opus 4.8, Pantheon's deepest tier, and that pin can't be downgraded by the request itself. Plain-text requests are scanned too: the risk keywords are matched against the request itself, not just structured packet fields, so `/grok:task "migrate the production auth database"` escalates the same way.

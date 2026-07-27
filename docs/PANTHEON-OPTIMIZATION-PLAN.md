@@ -17,7 +17,7 @@ Pantheon has three direct bidirectional legs:
 
 | Leg | Primary use | Default route |
 | --- | --- | --- |
-| Claude -> Grok | visual generation, visual review, multi-agent Grok synthesis | `/grok-imagine`, `/grok-review`, `/grok:*` |
+| Claude -> Grok | visual generation, visual review, multi-agent Grok synthesis | `/grok:imagine`, `/grok:review`, `/grok:*` |
 | Grok -> Claude | architecture, data modeling, orchestration, high-risk second opinions | `claude-delegate` / `claude-companion.mjs` |
 | Grok -> Codex | implementation, code review, build/test verification | `codex-delegate` / Codex companion |
 | Codex -> Grok | assets, creative direction, Imagine work, visual synthesis | `grok "..."` or `grok-delegate` |

@@ -33,8 +33,8 @@ User Command (slash command or skill)
 
 | Direction | Entry Point | Companion | Binary |
 |---|---|---|---|
-| Claude → Grok (visual) | `/grok-imagine` | grok-companion `imagine` | `grok -p ... --always-approve` |
-| Claude → Grok (review) | `/grok-review` | grok-companion `review` | same |
+| Claude → Grok (visual) | `/grok:imagine` | grok-companion `imagine` | `grok -p ... --always-approve` |
+| Claude → Grok (review) | `/grok:review` | grok-companion `review` | same |
 | Claude → Grok (generic) | `/grok:task` | grok-companion `task` | same |
 | Claude → Codex | `/grok:codex` | codex-companion | `codex exec -m ...` |
 | Grok → Claude | `claude-delegate` skill | claude-companion | `claude --model ... -p ...` |

@@ -179,7 +179,7 @@ cat <<EOF
 
     ${B}/grok:setup${R}                              ${DIM}# confirm Grok is reachable${R}
     ${B}/grok:health --live${R}                      ${DIM}# the same live check, from inside Claude${R}
-    ${B}/grok-imagine a folded linen napkin on marble, soft window light, 3:2${R}
+    ${B}/grok:imagine a folded linen napkin on marble, soft window light, 3:2${R}
     ${B}/grok:result${R}                             ${DIM}# get the file:// link + markdown${R}
 
   From a Grok session (reverse leg):

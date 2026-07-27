@@ -18,7 +18,7 @@ Project memory for Claude Code sessions working on this repo. Read before editin
 - **Reverse leg is live.** `claude-delegate` + `grok-imagine-from-claude-feedback` skills and the
   `claude-second-opinion` agent are **symlinked into `~/.grok/`** (`grok plugin install … --trust`).
   Not yet live-smoke-tested from a Grok session — see "Still open".
-- **Verified working.** Forward leg (`/grok-imagine`) confirmed end-to-end across 3 live generations:
+- **Verified working.** Forward leg (`/grok:imagine`) confirmed end-to-end across 3 live generations:
   gallery is populated, `file://` links resolve, ledger records status/pid/media/cost. `/grok:setup`
   passes. Loop guard + cancel + status verified functionally. **10 unit tests pass.**
 - **Sample assets** from the build sessions: `~/Pictures/grok-imagine/_session-samples/`
@@ -43,8 +43,8 @@ remaining directions share the same companions, ledger, and safety layer.
 
 Six directions (see `docs/PANTHEON-OPTIMIZATION-PLAN.md` for the canonical routing spec):
 
-- **Claude → Grok** (rich surface): `/grok-imagine` hands all image/video work to Grok Imagine;
-  `/grok-review` delegates multi-agent reviews. Installed as the Claude Code plugin `grok@pantheon`.
+- **Claude → Grok** (rich surface): `/grok:imagine` hands all image/video work to Grok Imagine;
+  `/grok:review` delegates multi-agent reviews. Installed as the Claude Code plugin `grok@pantheon`.
 - **Grok → Claude**: `claude-delegate` skill + `claude-second-opinion` agent hand non-visual work
   (architecture, reasoning, second opinions) back to the local Claude Code CLI.
 - **Grok ↔ Codex / Codex ↔ Claude / Claude → Codex**: implementation, build/test verification, and
@@ -84,7 +84,7 @@ docs/BRIDGE-AUDIT.md                 # the independent audit + punch-list this w
 
 ## How it runs (data flow)
 
-**Forward (`/grok-imagine "…"`):** command `.md` shells
+**Forward (`/grok:imagine "…"`):** command `.md` shells
 `node ${CLAUDE_PLUGIN_ROOT}/scripts/grok-companion.mjs imagine "$ARGUMENTS"` →
 `cmdImagine` builds a prompt → `runGrokHeadless` spawns `grok -p <prompt> --always-approve
 --output-format json --cwd <cwd>` (no shell, so user text is injection-safe) → Grok generates
@@ -297,7 +297,7 @@ high/medium/low is correct and live-verified, but four of six live mesh legs wer
   config-level `fork_secondary_model` in `~/.grok/config.toml`, **not** a `-m` slug — passing it
   errors `unknown model id`. It was the cheap/health/draft tier on three rows.
 - **`--best-of-n` does not exist** on the grok CLI (`unexpected argument`). It was emitted on both
-  `creative-review` rows, so `/grok-review` exited nonzero every time.
+  `creative-review` rows, so `/grok:review` exited nonzero every time.
 - Codex `model_reasoning_effort=minimal` **HTTP 400s** (`tools cannot be used with reasoning.effort
   'minimal': web_search`). It was the effort on both codex `health` rows.
 - Valid and confirmed: all four codex slugs (incl. `codex-auto-review`), codex `xhigh`, grok `low`.
@@ -392,7 +392,7 @@ documented as a reserved operator API, and caller model flags are handled (and g
 companions instead.
 
 **149 tests pass. Live `health --json --live` 6/6 after every change above**, including the detached
-spawn, and `/grok-imagine` re-verified end to end.
+spawn, and `/grok:imagine` re-verified end to end.
 
 ## Change log — 2026-07-27c (slash-command simplification)
 

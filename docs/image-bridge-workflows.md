@@ -12,15 +12,15 @@ This document shows the intended symmetric cross-agent patterns where **Grok Ima
 In Claude Code (CLI or TUI):
 
 ```bash
-/grok-imagine a hero product shot of a heavy linen napkin folded on cool marble with soft window light, 3:2
+/grok:imagine a hero product shot of a heavy linen napkin folded on cool marble with soft window light, 3:2
 
-/grok-imagine using the previous image as strong reference, recolor the napkin to deep charcoal, keep exact folds, texture, and lighting
+/grok:imagine using the previous image as strong reference, recolor the napkin to deep charcoal, keep exact folds, texture, and lighting
 
-/grok-imagine create a 6-second cinematic version: slow push-in from medium to close-up, very subtle fabric movement, warm golden hour shift at the end
+/grok:imagine create a 6-second cinematic version: slow push-in from medium to close-up, very subtle fabric movement, warm golden hour shift at the end
 ```
 
 What happens:
-- The `/grok-imagine` command is a thin forwarder.
+- The `/grok:imagine` command is a thin forwarder.
 - It calls the local `grok` binary headless with a prompt that activates your full imagine skill (reference-first, edit vs gen choice, video shot planning, ffmpeg assembly when needed).
 - Grok may internally use subagents or best-of-n for quality if it helps.
 - Final assets are written to `grok-media/<job-id>/` (or similar conventional folder) with relative markdown returned verbatim.
@@ -47,7 +47,7 @@ Claude's output and any files it creates are captured and handed back to Grok wi
 ### Full Feature Lifecycle (Image as Killer Feature + Symmetry)
 1. In Claude Code: "Build a premium product detail page for our new linen collection."
 2. Claude sketches the component structure.
-3. Claude: `/grok-imagine three consistent hero shots of the signature napkin in different elegant settings (marble, wood, linen tablecloth), use the same physical napkin as reference across all three, premium lifestyle photography, 3:2`
+3. Claude: `/grok:imagine three consistent hero shots of the signature napkin in different elegant settings (marble, wood, linen tablecloth), use the same physical napkin as reference across all three, premium lifestyle photography, 3:2`
 4. Grok generates the set using its Imagine tools + consistency practices. Assets land in `grok-media/hero-linen-*`.
 5. Claude reviews the page layout with the images.
 6. Claude gives feedback in chat: "The first one is good but the lighting feels too cool and flat. The folds need more definition. The third one has great mood but the composition is too centered — give it more breathing room on the left."
@@ -55,12 +55,12 @@ Claude's output and any files it creates are captured and handed back to Grok wi
 8. Grok crafts precise `image_edit` prompts and iterates only the affected shots.
 9. Grok (or Claude via bridge): `claude-delegate "Update the product page component to use the new iterated hero images. Add a subtle zoom-on-hover and make sure alt text describes the new dramatic lighting and composition."`
 10. Claude implements the code changes around the latest assets.
-11. Grok does a final `/grok-review` or Claude asks Grok for a multi-agent visual + code consistency pass.
+11. Grok does a final `/grok:review` or Claude asks Grok for a multi-agent visual + code consistency pass.
 
 Result: Best visuals from Grok Imagine, best integration/code from whichever agent is stronger, all artifacts shared.
 
 ### Video Production Pipeline
-- Claude: `/grok-imagine create a 10-second brand story video for the linen collection. Start with a static hero shot, slow push-in, then gentle fabric lift with wind, end on a close-up of the texture catching light. Use the reference napkin.`
+- Claude: `/grok:imagine create a 10-second brand story video for the linen collection. Start with a static hero shot, slow push-in, then gentle fabric lift with wind, end on a close-up of the texture catching light. Use the reference napkin.`
 - Grok plans shots internally (per imagine skill), generates base frames, animates with image_to_video, assembles with ffmpeg, returns the final .mp4 + storyboard images.
 - Claude: "The wind movement in shot 2 feels too fast." 
 - Grok uses the feedback skill to re-prompt only that shot with "slower, more subtle fabric lift, 6s duration".
@@ -69,7 +69,7 @@ Result: Best visuals from Grok Imagine, best integration/code from whichever age
 
 ### Surprise Cross-Bridge Brilliance Example: Grounded + Visual
 - Claude needs a realistic "desert luxury" campaign image but has no reference photo.
-- Claude: `/grok-imagine ...` with loose description.
+- Claude: `/grok:imagine ...` with loose description.
 - Grok (using full brilliance): First uses web_search or X tools to ground "current luxury desert resort aesthetics 2026", finds real reference details (specific dune colors, popular tent styles, lighting at golden hour in specific regions), then generates with strong grounding + Imagine.
 - Returns the image + the sources it used for authenticity.
 - Claude: "Great, now make the model look like a real person from the region without changing the setting."
@@ -91,7 +91,7 @@ This is where the symmetry shines: Grok brings search + Imagine + multi-agent th
 - Video: Describe in shots. Grok will plan and assemble; give feedback per-shot when possible.
 - Feedback loops: After Claude comments on an image, use the `grok-imagine-from-claude-feedback` skill on the Grok side to translate it into a high-signal prompt. This is the recommended way to "ask Grok to use its brilliance" on visual iteration.
 - Media hygiene: Keep the latest versions in a predictable `grok-media/` folder. Both agents should read the actual image files (via their respective tools) instead of relying only on descriptions.
-- Aspect ratios and output: Specify early in the `/grok-imagine` request so Grok sets it on the source generation.
+- Aspect ratios and output: Specify early in the `/grok:imagine` request so Grok sets it on the source generation.
 
 ### General Bridge Hygiene
 - Use `--background` for anything that might take time (complex video, multi-agent review).
@@ -101,7 +101,7 @@ This is where the symmetry shines: Grok brings search + Imagine + multi-agent th
 - Permission modes: For pure creative visual hand-offs, you can be looser. For code that touches the filesystem, be explicit with allowed tools.
 
 ### "Ask Grok to Use the Brilliance of Grok" (the surprise)
-When handing work to Grok (via `/grok-imagine`, `/grok-review`, or the general bridge), or when you are Grok and about to do creative work, explicitly invoke full strengths:
+When handing work to Grok (via `/grok:imagine`, `/grok:review`, or the general bridge), or when you are Grok and about to do creative work, explicitly invoke full strengths:
 
 - Imagine power + reference skill
 - Subagent orchestration / best-of-n for quality
@@ -169,7 +169,7 @@ When Claude hands work via the bridge, the prompt sent to Grok includes strong g
 - Generate a clean base first when many variations are needed, then edit the base.
 - For video: plan as distinct short shots, use `image_to_video` on the intended first frame, assemble with stream copy.
 
-Claude users don't need to know any of this — they just describe what they want in natural language after `/grok-imagine`.
+Claude users don't need to know any of this — they just describe what they want in natural language after `/grok:imagine`.
 
 ## Media Location Convention
 
@@ -210,7 +210,7 @@ See the main README for the full "Best Practices & the 'Ask Grok Brilliance' Sur
 claude --plugin-dir /path/to/Pantheon/plugins/grok
 /reload-plugins
 /grok:setup
-/grok-imagine a simple red square icon on white, 1:1
+/grok:imagine a simple red square icon on white, 1:1
 /grok:result
 ```
 Verify the image file + markdown appear in the workspace.

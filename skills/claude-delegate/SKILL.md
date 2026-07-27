@@ -41,7 +41,7 @@ Write/edit mode is not enabled by CLI flags. The operator must explicitly set `G
 ## Important notes
 - **No API keys** — uses the machine's already-authenticated Claude Code (`claude auth login` / `claude auth status`).
 - Visual work stays with Grok (Imagine models + your skill).
-- This is the Grok → Claude leg of Pantheon. Pantheon has three direct bidirectional legs (Grok↔Codex, Codex↔Claude, Grok↔Claude). The reverse on this leg (Claude → Grok) exposes `/grok-imagine`, `/grok-review`, etc. Codex side uses its own companions/skills for its legs.
+- This is the Grok → Claude leg of Pantheon. Pantheon has three direct bidirectional legs (Grok↔Codex, Codex↔Claude, Grok↔Claude). The reverse on this leg (Claude → Grok) exposes `/grok:imagine`, `/grok:review`, etc. Codex side uses its own companions/skills for its legs.
 - For the canonical routing and safety policy, see `docs/PANTHEON-OPTIMIZATION-PLAN.md` in the bridge repo.
 - After installing the bridge as a Grok plugin, this skill becomes available (namespaced if needed).
 

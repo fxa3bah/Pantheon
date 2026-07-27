@@ -61,7 +61,7 @@ node plugins/grok/scripts/grok-companion.mjs task "Review these three campaign c
 ## Important notes
 - **No API keys** — uses the machine's already-authenticated Grok Build (`grok` on PATH or `~/.grok/bin/grok`, already logged in).
 - Implementation/build/test work stays on Codex itself; architecture/reasoning work goes to Claude via `codex-to-claude`.
-- This is the Codex -> Grok leg of Pantheon (six directions total: Claude<->Grok, Grok<->Codex, Codex<->Claude). Claude -> Grok uses `/grok-imagine`, `/grok-review`, and `/grok:task` from the Claude Code side; Grok -> Codex uses the `codex-delegate` skill.
+- This is the Codex -> Grok leg of Pantheon (six directions total: Claude<->Grok, Grok<->Codex, Codex<->Claude). Claude -> Grok uses `/grok:imagine`, `/grok:review`, and `/grok:task` from the Claude Code side; Grok -> Codex uses the `codex-delegate` skill.
 - For the canonical routing and safety policy, see `docs/PANTHEON-OPTIMIZATION-PLAN.md` in the bridge repo, and `README.md` § Model routing for the full routing matrix.
 
 See the canonical `docs/PANTHEON-OPTIMIZATION-PLAN.md` in the bridge repo.

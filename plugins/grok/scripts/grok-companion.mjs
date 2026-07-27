@@ -2,7 +2,7 @@
 /**
  * grok-companion.mjs
  * Thin Pantheon companion for the Claude Code side of Pantheon.
- * Shells the local authenticated `grok` binary (headless) for /grok-imagine and /grok-review.
+ * Shells the local authenticated `grok` binary (headless) for /grok:imagine and /grok:review.
  * No API keys — only uses the already-logged-in local Grok CLI.
  *
  * Subcommands (called by the .md command frontmatter + Bash):
@@ -517,7 +517,7 @@ function cmdHealth(args) {
       codex: { path: codexBin, version: versionOf(codexBin) }
     },
     legs: {
-      'claude-to-grok': { configured: Boolean(grokBin), command: '/grok-imagine, /grok-review, /grok:setup' },
+      'claude-to-grok': { configured: Boolean(grokBin), command: '/grok:imagine, /grok:review, /grok:setup' },
       'grok-to-claude': { configured: Boolean(claudeBin), command: 'claude-delegate via claude-companion.mjs' },
       'grok-to-codex': { configured: Boolean(codexBin), command: 'codex-delegate / codex companion' },
       'codex-to-grok': { configured: Boolean(grokBin), command: 'grok "..." or grok-delegate skill' },

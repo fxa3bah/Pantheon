@@ -2,10 +2,10 @@
 
 **A local, OAuth-only delegation mesh for your AI coding agents.** Pantheon lets **Claude Code**, **Grok Build**, and **Codex**, all installed and logged in on the same machine, hand work to each other. No API keys, no remote services, no daemons. Each leg simply shells the CLI you are already logged into through its normal headless mode.
 
-The headline use is **image and video generation**: from inside Claude Code you type `/grok-imagine` and Grok's Imagine models do the work, with the finished assets dropped back into your session as clickable links. On top of that, any agent can ask another for a second opinion, an implementation pass, or a multi-agent review.
+The headline use is **image and video generation**: from inside Claude Code you type `/grok:imagine` and Grok's Imagine models do the work, with the finished assets dropped back into your session as clickable links. On top of that, any agent can ask another for a second opinion, an implementation pass, or a multi-agent review.
 
 ```
-You in Claude Code:  /grok-imagine a cinematic product shot of a linen napkin on marble, 3:2
+You in Claude Code:  /grok:imagine a cinematic product shot of a linen napkin on marble, 3:2
 Pantheon:            (shells your logged-in Grok, generates, copies the file to your gallery)
                      -> file:///Users/you/Pictures/grok-imagine/2026-06-18/<job>/<job>-1.png
                         ![napkin](file://...)   <- ready to paste
@@ -21,7 +21,7 @@ Pantheon is a mesh of six directions. Be honest about maturity before you instal
 
 | Direction | Maturity | How you use it |
 |---|---|---|
-| **Claude -> Grok** | Polished | `/grok-imagine`, `/grok-review`, `/grok:task` slash commands |
+| **Claude -> Grok** | Polished | `/grok:imagine`, `/grok:review`, `/grok:task` slash commands |
 | **Grok -> Claude** | Polished | `claude-delegate` skill + `claude-second-opinion` agent |
 | **Claude -> Codex** | Real | `/grok:codex` slash command, or `node plugins/grok/scripts/codex-companion.mjs "task"` directly, spawns `codex exec` |
 | **Grok -> Codex** | Real | `codex-delegate` skill → the same `codex-companion.mjs` |
@@ -36,8 +36,8 @@ You do not need all three agents. If you only have Claude Code and Grok, the hea
 
 | Direction | Initiator | First-class trigger |
 |---|---|---|
-| Claude -> Grok (visual) | Claude Code | `/grok-imagine` |
-| Claude -> Grok (review) | Claude Code | `/grok-review` |
+| Claude -> Grok (visual) | Claude Code | `/grok:imagine` |
+| Claude -> Grok (review) | Claude Code | `/grok:review` |
 | Claude -> Grok (generic) | Claude Code | `/grok:task` |
 | Claude -> Codex | Claude Code | `/grok:codex` |
 | Grok -> Claude | Grok CLI | `claude-delegate` skill |
@@ -188,9 +188,9 @@ A passing `--live` run means every available direction actually answered. The he
 ## Quick start
 
 ```
-/grok-imagine a dramatic low-angle product shot of a folded heavy linen napkin on cool marble, soft window light, 3:2
-/grok-imagine turn the previous image into a 6-second slow push-in with subtle fabric movement
-/grok-review the auth flow and state-machine changes on this branch --background
+/grok:imagine a dramatic low-angle product shot of a folded heavy linen napkin on cool marble, soft window light, 3:2
+/grok:imagine turn the previous image into a 6-second slow push-in with subtle fabric movement
+/grok:review the auth flow and state-machine changes on this branch --background
 /grok:status
 /grok:result
 ```
@@ -203,8 +203,8 @@ For anything slow (video, a multi-agent review), add `--background`, then poll `
 
 | Command | What it does |
 |---|---|
-| `/grok-imagine <request> [--background]` | Hand off any image or video task (stills, edits, variations, references, short video). Grok uses its Imagine models. |
-| `/grok-review [focus] [--background]` | Delegate a review or investigation. Grok runs multiple perspectives and returns one synthesized report. |
+| `/grok:imagine <request> [--background]` | Hand off any image or video task (stills, edits, variations, references, short video). Grok uses its Imagine models. |
+| `/grok:review [focus] [--background]` | Delegate a review or investigation. Grok runs multiple perspectives and returns one synthesized report. |
 | `/grok:task <request> [--background]` | Hand a generic non-visual task to Grok Build. |
 | `/grok:codex <task> [--background]` | Delegate implementation, build, verify, or review work to the local Codex CLI. |
 | `/grok:delegate <task>` | Suggest the best-fit agent for a task and run it **only after you confirm**. |
@@ -282,7 +282,7 @@ All three companions share one job ledger at `./.grok-bridge/<job>.json` in the 
 Pantheon is built so one agent driving another cannot quietly run away or do damage:
 
 - **Loop guard.** Each crossed hop increments a counter. Once it reaches `GROK_BRIDGE_MAX_HOPS` (default 2), further delegation is refused. No infinite Claude -> Grok -> Claude recursion.
-- **Write gate (all three legs).** By default a delegated Claude runs **read-only** (`Read,Glob,Grep`), a delegated Codex runs `--sandbox read-only`, and a delegated Grok is pinned to `--tools read_file,list_dir,grep`. The one exception is `/grok-imagine`, which must execute image tools to generate anything. Dangerous flags like `--dangerously-skip-permissions` and `--permission-mode bypassPermissions` are stripped and surfaced as a warning. You opt into writes explicitly with `GROK_BRIDGE_ALLOW_WRITES=1`.
+- **Write gate (all three legs).** By default a delegated Claude runs **read-only** (`Read,Glob,Grep`), a delegated Codex runs `--sandbox read-only`, and a delegated Grok is pinned to `--tools read_file,list_dir,grep`. The one exception is `/grok:imagine`, which must execute image tools to generate anything. Dangerous flags like `--dangerously-skip-permissions` and `--permission-mode bypassPermissions` are stripped and surfaced as a warning. You opt into writes explicitly with `GROK_BRIDGE_ALLOW_WRITES=1`.
 - **Timeouts** kill hung children, and `/grok:cancel` sends a real SIGTERM.
 
 ---
