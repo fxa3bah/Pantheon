@@ -55,7 +55,7 @@ Recommended fields:
   "constraints": { "mode": "read-only", "style": "project design system" },
   "permissions": { "file_writes": false, "destructive": false },
   "budget": { "timeout_ms": 300000, "cost": "low" },
-  "model": "grok-build",
+  "model": "grok-4.5",
   "return_format": "Concise findings plus local file paths.",
   "provenance": "Delegated by Codex via Pantheon.",
   "media": [
@@ -81,7 +81,7 @@ Companions must store packet metadata in the job ledger and include `media[]` un
 | --- | --- | --- | --- |
 | Codex | `gpt-5.3-codex-spark` @ high reasoning (default) | `gpt-5.4-mini` | `gpt-5.5` @ xhigh for the deep tier; `codex-auto-review` for review |
 | Claude | `claude-opus-4-8` | `claude-haiku-4-5-20251001` | `claude-opus-4-8` for architecture/security-review; `claude-sonnet-5` (balanced tier) for data-model/second-opinion, auto-escalating to `claude-opus-4-8` on risk keywords, `escalate:true`, `budget.cost:high`, or a retry — Fable is not used |
-| Grok | `grok-build` (= Grok 4.3) | `grok-composer-2.5-fast` | `grok-build` @ xhigh, best-of-3 for deep-creative work; Imagine exclusively for image/video. `grok-build` IS xAI's Grok 4.3 coding agent (the CLI exposes no separate `grok-4.3` slug), so it covers general synthesis too |
+| Grok | `grok-4.5` (the only model `grok models` lists, Jul 2026) | `grok-4.5` @ low | `grok-4.5` @ **high** for deep-creative work, with best-of-3 requested inside the prompt — the CLI has no `--best-of-n` flag (efforts: high\|medium\|low only, no xhigh). `grok-composer-2.5-fast` is a config-level `fork_secondary_model`, NOT a selectable `-m` slug. Imagine exclusively for image/video |
 
 The routing table in `plugins/grok/scripts/lib/model-routing.mjs` is canonical; this doc mirrors it.
 

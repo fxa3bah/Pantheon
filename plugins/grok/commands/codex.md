@@ -1,42 +1,31 @@
 ---
-description: Delegate implementation, build, test-verification, or code-review work to the local authenticated Codex CLI (Claude -> Codex leg of Pantheon). Claude builds a structured packet; Codex executes and returns the result.
-argument-hint: '<coding/build/verify task> [--background|--wait]'
+description: Delegate implementation, build/test verification, or code review to the local authenticated Codex CLI.
+argument-hint: '<coding/build/verify task> [--background]'
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
+allowed-tools: Bash(node:*)
 ---
-Run the task through the local authenticated Codex CLI (headless), via Pantheon's Claude -> Codex leg.
+Hand `$ARGUMENTS` to the local authenticated Codex CLI.
 
-Raw slash-command arguments:
-`$ARGUMENTS`
+- **This is a hand-off.** Do not implement, build, test, or review the code yourself.
+- **Pass the request through verbatim.** Do not rewrite, narrow, or summarize it.
+- **Do not pick a model or effort.** The router does that.
+- Runs `--sandbox read-only` unless `GROK_BRIDGE_ALLOW_WRITES=1`. If the task clearly needs to
+  write files, say so before running rather than letting it fail silently.
 
-Core rules:
-- This is a hand-off. Do not implement, build, test, or review the code yourself — Codex does the real work.
-- Build a **Pantheon packet** (not a raw string) so the lane is explicit and the router picks the right model/effort precisely.
-- Infer `lane` from the request:
-  - default `implement` (writing code, adding a feature, fixing a bug)
-  - `verify` if the task is about running builds/tests, reproducing a failure, or confirming something works
-  - `review` if the task is reviewing existing code/diffs rather than changing anything
-- Keep the user's intent verbatim in `objective` — do not paraphrase or narrow the request. JSON-escape it.
-- Read-only by default: Codex runs `--sandbox read-only` unless the operator has set `GROK_BRIDGE_ALLOW_WRITES=1`. If the task clearly requires writing files, tell the user this up front rather than silently expecting writes.
-- Model and effort are auto-picked by Pantheon's router (`lib/model-routing.mjs`) — do not choose them yourself. `implement`/`verify` route to `gpt-5.3-codex-spark` @ high; `review` routes to `codex-auto-review` @ high.
+Pick one lane and pass it with `--lane`; the companion builds the Pantheon packet:
 
-Execution mode:
-- If raw arguments contain `--background`, launch via Bash with run_in_background: true and tell the user to check `/grok:status`.
-- If `--wait`, run in foreground.
-- Otherwise run in the foreground by default — Codex tasks aren't as long-running as video generation, so background is the exception here, not the rule.
+| Lane | Use when the task is |
+|---|---|
+| `implement` | writing code, adding a feature, fixing a bug (**default**) |
+| `verify` | running builds/tests, reproducing a failure, confirming something works |
+| `review` | reviewing existing code or a diff without changing it |
 
-Forwarding:
+Foreground (default):
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" '{"pantheon_packet":true,"from":"claude","to":"codex","lane":"<implement|verify|review>","objective":"<the user task, JSON-escaped>","provenance":"Delegated by Claude Code via Pantheon."}'
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" "$ARGUMENTS" --lane implement
 ```
 
-Background:
-```typescript
-Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" '{"pantheon_packet":true,"from":"claude","to":"codex","lane":"<implement|verify|review>","objective":"<the user task, JSON-escaped>","provenance":"Delegated by Claude Code via Pantheon."}'`,
-  description: "Codex delegation task",
-  run_in_background: true
-})
-```
+If the arguments contain `--background`, run the same command with `run_in_background: true`
+and tell the user to check `/grok:status`.
 
-Return the companion stdout **verbatim**. Do not paraphrase, summarize, or add commentary before or after.
+Print the companion's stdout **verbatim**. No preamble, no summary, no commentary.

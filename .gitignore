@@ -11,3 +11,6 @@ grok-media/
 *.tmp
 .idea/
 .vscode/
+
+# Local session cache (save-session), not project state — CLAUDE.md is the tracked memory
+.claude/

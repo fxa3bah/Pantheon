@@ -24,6 +24,43 @@ function deepFreeze(value) {
   }
   return value;
 }
+// What each local CLI ACTUALLY accepts, verified against the installed binaries
+// (`grok models`, `grok --help`, `codex exec -m <slug>`, `claude --model`).
+// The routing tables below say what we *want*; this says what the CLI *takes*.
+// Keeping both lets validateRoutingTables() catch a stale slug at test time
+// instead of at spawn time — the 2026-07-08 Grok 4.5 cutover shipped a cheap
+// tier (`grok-composer-2.5-fast`) and a `--best-of-n` flag that no longer
+// exist, and 114 table-vs-table tests all passed. Re-verify with
+// `node plugins/grok/scripts/probe-cli-capabilities.mjs` when a CLI updates.
+export const AGENT_CAPABILITIES = deepFreeze({
+  claude: {
+    models: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'],
+    // The claude CLI DOES take `--effort low|medium|high|xhigh|max`. Pantheon
+    // does not route it yet — no claude row carries an effort, so every Claude
+    // leg runs at the CLI default. Listed here so the manifest stays honest
+    // (and so buildArgs would emit a legal value if a row ever adds one).
+    efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    supportsBestOfN: false,
+    contextSuffixModels: ['claude-sonnet-5', 'claude-opus-4-8']
+  },
+  codex: {
+    models: ['gpt-5.5', 'gpt-5.3-codex-spark', 'codex-auto-review', 'gpt-5.4-mini'],
+    // `minimal` is a real codex effort level but is incompatible with the
+    // web_search tool codex enables by default — it 400s. Excluded on purpose.
+    efforts: ['low', 'medium', 'high', 'xhigh'],
+    supportsBestOfN: false,
+    contextSuffixModels: []
+  },
+  grok: {
+    // `grok models` lists exactly one selectable model. grok-composer-2.5-fast
+    // is only a config-level fork_secondary_model, NOT a `-m` slug.
+    models: ['grok-4.5'],
+    efforts: ['low', 'medium', 'high'],  // no xhigh on 4.5
+    supportsBestOfN: false,              // no --best-of-n flag exists
+    contextSuffixModels: []
+  }
+});
+
 // Model tiers per agent (for health reporting).
 export const MODEL_TIERS = deepFreeze({
   claude: {
@@ -36,29 +73,38 @@ export const MODEL_TIERS = deepFreeze({
     deep: { model: 'gpt-5.5', effort: 'xhigh' },
     default: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     review: { model: 'codex-auto-review', effort: 'high' },
-    cheap: { model: 'gpt-5.4-mini', effort: 'minimal' }
+    // `minimal` here 400s ("tools cannot be used with reasoning.effort
+    // 'minimal': web_search") — `low` is the cheapest effort that actually runs.
+    cheap: { model: 'gpt-5.4-mini', effort: 'low' }
   },
   grok: {
-    deepCreative: { model: 'grok-build', effort: 'xhigh', bestOfN: 3 },
-    default: { model: 'grok-build', effort: 'high' },
-    cheap: { model: 'grok-composer-2.5-fast', effort: 'low' }
+    // Grok 4.5 (2026-07-08): CLI exposes high|medium|low only — no xhigh.
+    // bestOfN is routing INTENT only (surfaced in the review prompt + ledger);
+    // it is never emitted as a CLI flag — grok has no --best-of-n.
+    deepCreative: { model: 'grok-4.5', effort: 'high', bestOfN: 3 },
+    default: { model: 'grok-4.5', effort: 'high' },
+    // grok-composer-2.5-fast is not a selectable `-m` slug; 4.5 @ low is the
+    // real cheap tier.
+    cheap: { model: 'grok-4.5', effort: 'low' }
   }
 });
 
 // Routing table: direction -> taskClass -> {model, effort?, bestOfN?}.
-// effort is omitted for claude rows — claude has no --effort flag.
+// effort is omitted for claude rows: the CLI accepts `--effort`, but Pantheon
+// does not route it, so Claude legs take the CLI default. buildArgs() therefore
+// never emits `--effort` for claude regardless of what a row or packet says.
 export const ROUTING_TABLE = deepFreeze({
   'claude-to-grok': {
-    imagine: { model: 'grok-build', effort: 'high' },
-    'creative-review': { model: 'grok-build', effort: 'xhigh', bestOfN: 3 },
-    task: { model: 'grok-build', effort: 'medium' },
-    health: { model: 'grok-composer-2.5-fast', effort: 'low' }
+    imagine: { model: 'grok-4.5', effort: 'high' },
+    'creative-review': { model: 'grok-4.5', effort: 'high', bestOfN: 3 },
+    task: { model: 'grok-4.5', effort: 'medium' },
+    health: { model: 'grok-4.5', effort: 'low' }
   },
   'claude-to-codex': {
     implement: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     review: { model: 'codex-auto-review', effort: 'high' },
     verify: { model: 'gpt-5.3-codex-spark', effort: 'high' },
-    health: { model: 'gpt-5.4-mini', effort: 'minimal' }
+    health: { model: 'gpt-5.4-mini', effort: 'low' }
   },
   'grok-to-claude': {
     architecture: { model: 'claude-opus-4-8' },
@@ -72,7 +118,7 @@ export const ROUTING_TABLE = deepFreeze({
     implement: { model: 'gpt-5.3-codex-spark', effort: 'high' },
     review: { model: 'codex-auto-review', effort: 'high' },
     verify: { model: 'gpt-5.3-codex-spark', effort: 'high' },
-    health: { model: 'gpt-5.4-mini', effort: 'minimal' }
+    health: { model: 'gpt-5.4-mini', effort: 'low' }
   },
   'codex-to-claude': {
     'second-opinion': { model: 'claude-sonnet-5' },
@@ -82,12 +128,12 @@ export const ROUTING_TABLE = deepFreeze({
     health: { model: 'claude-haiku-4-5-20251001' }
   },
   'codex-to-grok': {
-    imagine: { model: 'grok-build', effort: 'high' },
-    assets: { model: 'grok-build', effort: 'high' },
-    'creative-review': { model: 'grok-build', effort: 'xhigh', bestOfN: 3 },
-    task: { model: 'grok-build', effort: 'medium' },
-    draft: { model: 'grok-composer-2.5-fast', effort: 'medium' },
-    health: { model: 'grok-composer-2.5-fast', effort: 'low' }
+    imagine: { model: 'grok-4.5', effort: 'high' },
+    assets: { model: 'grok-4.5', effort: 'high' },
+    'creative-review': { model: 'grok-4.5', effort: 'high', bestOfN: 3 },
+    task: { model: 'grok-4.5', effort: 'medium' },
+    draft: { model: 'grok-4.5', effort: 'medium' },
+    health: { model: 'grok-4.5', effort: 'low' }
   }
 });
 
@@ -97,8 +143,16 @@ const RISK_KEYWORDS = [
   'security', 'auth', 'payment', 'credential', 'secret', 'data-loss', 'migration', 'destructive', 'production'
 ];
 // Pre-compiled once at module load; keywordHit() previously rebuilt these RegExp
-// objects on every call. `\w*` stem-matches (auth → authentication, etc.).
-const RISK_KEYWORD_RES = RISK_KEYWORDS.map((kw) => new RegExp(`\\b${kw}\\w*`, 'i'));
+// objects on every call. `\w*` stem-matches (credential → credentials, etc.).
+// Two keywords need a hand-written pattern rather than the generic stem:
+//  - `auth`: a bare `\bauth\w*` also matches "author"/"authority"/"authored",
+//    which are not risk signals. Enumerate the real family instead.
+//  - `data-loss`: the literal hyphen missed the far more common "data loss".
+const RISK_KEYWORD_RES = RISK_KEYWORDS.map((kw) => {
+  if (kw === 'auth') return /\bauth\b|\bauthn\b|\bauthz\b|\bauthentic\w*|\bauthoriz\w*/i;
+  if (kw === 'data-loss') return /\bdata[\s-]?loss\b/i;
+  return new RegExp(`\\b${kw}\\w*`, 'i');
+});
 
 function agentFromDirection(direction) {
   if (typeof direction !== 'string') return null;
@@ -169,8 +223,25 @@ function envModelFor(agent, env) {
   const v = env?.[key];
   return nonEmptyString(v) ? v.trim() : null;
 }
-function keywordHit(packet) {
-  const haystack = `${packet?.objective || ''} ${packet?.constraints || ''}`;
+// Flatten a packet field that may be a string, object, or array. `constraints`
+// is documented as an object, and template-interpolating one yields the literal
+// "[object Object]", hiding every keyword inside it.
+function flatten(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v); } catch { return ''; }
+}
+
+// `promptText` matters as much as the packet: most delegations are plain
+// strings with no packet at all, so scanning only packet.objective/constraints
+// meant the documented "auto-escalates on risk keywords" never fired for
+// `/grok:task "migrate the production auth database"`.
+function keywordHit(packet, promptText = '') {
+  const haystack = [
+    flatten(packet?.objective),
+    flatten(packet?.constraints),
+    flatten(promptText)
+  ].join(' ');
   if (!haystack.trim()) return false;
   // Stem/prefix match (word-start anchored, trailing word-chars allowed) so a
   // keyword also matches its morphological family: credential(s), secret(s),
@@ -179,10 +250,14 @@ function keywordHit(packet) {
   // preferred over missing a real security phrasing.
   return RISK_KEYWORD_RES.some((re) => re.test(haystack));
 }
-function escalationReason(attempt, packet) {
+// The reason recorded in the ledger must be the signal that actually fired.
+// This previously reported 'retry' whenever attempt >= 2 even when an explicit
+// packet.escalate was the real trigger, so the audit field could disagree with
+// the cause.
+function escalationReason({ explicit, risky, attempt }) {
+  if (explicit) return 'packet';
+  if (risky) return 'keyword';
   if (attempt >= 2) return 'retry';
-  if (packet?.budget?.cost === 'high') return 'packet';
-  if (packet?.escalate === true) return 'packet';
   return 'keyword';
 }
 
@@ -204,44 +279,113 @@ function escalateToDeep(agent, currentBestOfN, reason) {
 }
 
 // Escalation/cost-cap logic — only invoked when source === 'table'.
-function applyEscalation({ agent, taskClass, packet, attempt, model, effort, bestOfN }) {
+//
+// Ordering matters and is deliberate:
+//   1. security-review and mechanical classes are never touched at all.
+//   2. An explicit escalate/cost:high from the packet wins.
+//   3. A RISK KEYWORD beats budget.cost:'low'. This inverted before: the cost
+//      cap was checked first, so a packet saying `cost:'low'` on "rotate the
+//      production credentials" pinned the CHEAP tier. A cost hint from an
+//      untrusted delegator must not be able to downgrade risky work.
+//   4. Only then does the cost cap apply.
+export function applyEscalation({ agent, taskClass, packet, attempt = 1, promptText = '', model, effort, bestOfN }) {
   if (taskClass === 'security-review' || MECHANICAL_TASK_CLASSES.has(taskClass)) {
     return { model, effort, bestOfN, escalated: false };
   }
-  const costLow = packet?.budget?.cost === 'low';
-  const escalateSignal = packet?.escalate === true || packet?.budget?.cost === 'high' || keywordHit(packet) || attempt >= 2;
-  if (packet?.escalate === true) return escalateToDeep(agent, bestOfN, escalationReason(attempt, packet));
-  if (costLow) return pinCheap(agent);
-  if (escalateSignal) return escalateToDeep(agent, bestOfN, escalationReason(attempt, packet));
+  const explicit = packet?.escalate === true || packet?.budget?.cost === 'high';
+  const risky = keywordHit(packet, promptText);
+  const retry = attempt >= 2;
+
+  if (explicit || risky) {
+    return escalateToDeep(agent, bestOfN, escalationReason({ explicit, risky, attempt }));
+  }
+  if (packet?.budget?.cost === 'low') return pinCheap(agent);
+  if (retry) return escalateToDeep(agent, bestOfN, escalationReason({ explicit, risky, attempt }));
   return { model, effort, bestOfN, escalated: false };
 }
 
-function buildArgs(agent, model, effort, bestOfN) {
+// An effort only reaches the CLI if that CLI actually accepts it. A packet or
+// env override can carry any string (`packetEffort` only checks non-empty), and
+// an unknown level makes the child exit nonzero — dropping it instead lets the
+// CLI apply its own default, which is always better than a hard failure.
+export function safeEffort(agent, effort) {
+  if (effort == null) return null;
+  const allowed = AGENT_CAPABILITIES[agent]?.efforts;
+  if (!allowed) return null;                 // agent has no effort flag at all
+  return allowed.includes(effort) ? effort : null;
+}
+
+// bestOfN is deliberately NOT emitted: no CLI in the mesh has a --best-of-n
+// flag. It survives on the resolved object as routing intent (the review
+// prompt asks Grok to run best-of-n internally) and as a ledger field.
+function buildArgs(agent, model, effort) {
   if (!agent || !model) return [];
+  const eff = safeEffort(agent, effort);
   if (agent === 'claude') return ['--model', model];
   if (agent === 'codex') {
     const args = ['-m', model];
-    if (effort != null) args.push('-c', `model_reasoning_effort=${effort}`);
+    if (eff != null) args.push('-c', `model_reasoning_effort=${eff}`);
     return args;
   }
   if (agent === 'grok') {
     const args = ['--model', model];
-    if (effort != null) args.push('--effort', effort);
-    if (bestOfN) args.push('--best-of-n', String(bestOfN));
+    if (eff != null) args.push('--effort', eff);
     return args;
   }
   return [];
 }
 
+// Test-time guard: every literal in MODEL_TIERS and ROUTING_TABLE must be legal
+// for the CLI it targets. This is the check that would have caught the Grok 4.5
+// cutover shipping a dead cheap slug and a nonexistent flag. Returns a list of
+// human-readable problems; empty means the tables match the installed CLIs.
+export function validateRoutingTables() {
+  const problems = [];
+  const check = (agent, where, row) => {
+    const caps = AGENT_CAPABILITIES[agent];
+    if (!caps) { problems.push(`${where}: unknown agent "${agent}"`); return; }
+    if (row.model && !caps.models.includes(row.model)) {
+      problems.push(`${where}: model "${row.model}" is not accepted by the ${agent} CLI`);
+    }
+    if (row.effort != null && (!caps.efforts || !caps.efforts.includes(row.effort))) {
+      problems.push(`${where}: effort "${row.effort}" is not accepted by the ${agent} CLI`);
+    }
+  };
+  for (const [agent, tiers] of Object.entries(MODEL_TIERS)) {
+    for (const [tier, v] of Object.entries(tiers)) {
+      check(agent, `MODEL_TIERS.${agent}.${tier}`, typeof v === 'string' ? { model: v } : v);
+    }
+  }
+  for (const [direction, row] of Object.entries(ROUTING_TABLE)) {
+    const agent = agentFromDirection(direction);
+    for (const [taskClass, spec] of Object.entries(row)) {
+      check(agent, `ROUTING_TABLE.${direction}.${taskClass}`, spec);
+    }
+  }
+  return problems;
+}
+
 // Resolve the model/effort/bestOfN/args for one hop of the mesh. Precedence:
 // explicitModel > packet.model > env var > routing table > none. Escalation
-// and cost caps apply only to the table source. Returns a frozen object.
+// and cost caps apply to the table source; a RISK KEYWORD additionally applies
+// as a floor over packet/env models (see below). Returns a frozen object.
+//
+// `promptText` is the delegated request itself. Pass it: most hops carry no
+// packet, and without it the risk-keyword escalation can never fire.
+//
+// `explicitModel` / `explicitEffort` / `attempt` are a RESERVED operator API —
+// no companion passes them today, and the caller `--model`/`-m` flag must NOT
+// be wired to `explicitModel`. On the reverse legs the "caller" is Grok or
+// Codex, i.e. exactly the untrusted delegator the security-review pin exists to
+// stop; routing a caller flag through the explicit branch would bypass that pin
+// by design. Caller model flags are handled in the companions and gated there.
 export function resolveModel({
   direction,
   taskClass,
   packet = null,
   explicitModel = null,
   explicitEffort = null,
+  promptText = '',
   contextChars = 0,
   attempt = 1,
   env = process.env
@@ -265,7 +409,7 @@ export function resolveModel({
     // CLI --model, handled above) may override this.
     source = 'table';
     ({ model, effort, bestOfN, escalated } = applyEscalation({
-      agent, taskClass, packet, attempt,
+      agent, taskClass, packet, attempt, promptText,
       model: tableRow.model, effort: tableRow.effort ?? null, bestOfN: tableRow.bestOfN ?? null
     }));
   } else {
@@ -285,10 +429,29 @@ export function resolveModel({
       } else if (tableRow) {
         source = 'table';
         ({ model, effort, bestOfN, escalated } = applyEscalation({
-          agent, taskClass, packet, attempt,
+          agent, taskClass, packet, attempt, promptText,
           model: tableRow.model, effort: tableRow.effort ?? null, bestOfN: tableRow.bestOfN ?? null
         }));
       }
+    }
+  }
+
+  // Risk floor. A packet.model or env override bypassed applyEscalation
+  // entirely, so an untrusted delegator could pin a cheap model onto work that
+  // trips a risk keyword. Precedence still holds for ordinary work — this only
+  // raises the tier, never lowers it, and never touches an explicit human
+  // --model or a mechanical/security-pinned class.
+  if ((source === 'packet' || source === 'env')
+      && taskClass !== 'security-review'
+      && !MECHANICAL_TASK_CLASSES.has(taskClass)
+      && keywordHit(packet, promptText)) {
+    const deep = escalateToDeep(agent, bestOfN, 'keyword');
+    if (deep.model) {
+      model = deep.model;
+      effort = deep.effort;
+      bestOfN = deep.bestOfN;
+      escalated = 'keyword';
+      source = `${source}-risk-escalated`;
     }
   }
   // [1m] context suffix — claude agent only, applies regardless of source.
@@ -304,7 +467,7 @@ export function resolveModel({
     model,
     effort,
     bestOfN: bestOfN ?? null,
-    args: buildArgs(agent, model, effort, bestOfN),
+    args: buildArgs(agent, model, effort),
     source,
     escalated,
     taskClass

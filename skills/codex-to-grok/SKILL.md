@@ -35,7 +35,7 @@ Use this skill to hand work **to the local Grok Build CLI** on the same machine.
   ```bash
   grok -p "your request..." --always-approve --output-format json --cwd <cwd>
   ```
-  Model/effort are picked automatically by Pantheon's model router (`lib/model-routing.mjs`) — you don't choose them yourself. On the `codex-to-grok` direction: `imagine`/`assets` route to `grok-build` @ high; `creative-review` routes to `grok-build` @ xhigh with best-of-3; generic `task` routes to `grok-build` @ medium; `draft` routes to the cheaper `grok-composer-2.5-fast` @ medium.
+  Model/effort are picked automatically by Pantheon's model router (`lib/model-routing.mjs`) — you don't choose them yourself. On the `codex-to-grok` direction: `imagine`/`assets` route to `grok-4.5` @ high; `creative-review` routes to `grok-4.5` @ high and asks for best-of-3 in the prompt (the CLI has no `--best-of-n` flag); generic `task` routes to `grok-4.5` @ medium; `draft` routes to `grok-4.5` @ medium.
 - Generated images/videos are copied into the media gallery (`GROK_BRIDGE_MEDIA_DIR`, default `~/Pictures/grok-imagine`) and returned as clickable `file://` links plus ready-to-paste markdown embeds — never dumped into the raw session directory.
 - Results are captured in the job ledger (`.grok-bridge/`) and surfaced back to you with clear local paths and provenance.
 
@@ -55,7 +55,7 @@ node plugins/grok/scripts/grok-companion.mjs imagine "a cinematic product shot o
 The router uses `from`/`to` to pick the direction and `lane` to classify the task (`visual`, `creative-review`, `assets`, `draft`):
 
 ```bash
-node plugins/grok/scripts/grok-companion.mjs task '{"pantheon_packet":true,"from":"codex","to":"grok","lane":"creative-review","objective":"Review these three campaign concepts for the fall linen launch and recommend one, with reasoning.","context":"Concepts: A) warm morning light, B) cool marble studio, C) outdoor picnic. Target audience: DTC home-goods buyers.","return_format":"One recommended concept plus a short rationale for each option considered.","provenance":"Delegated by Codex via Pantheon."}'
+node plugins/grok/scripts/grok-companion.mjs task "Review these three campaign concepts for the fall linen launch and recommend one, with reasoning. Concepts: A) warm morning light, B) cool marble studio, C) outdoor picnic. Audience: DTC home-goods buyers." --lane review --from codex
 ```
 
 ## Important notes

@@ -1,32 +1,24 @@
 ---
-description: Delegate to Grok Build and explicitly instruct it to use multiple agents / subagents / parallel perspectives for a deep review or investigation. Get a synthesized multi-perspective result back.
-argument-hint: '[--background|--wait] [focus or implied git state]'
+description: Delegate a deep review or investigation to Grok Build, which runs multiple perspectives and returns one synthesized report.
+argument-hint: '[focus] [--background]'
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
+allowed-tools: Bash(node:*)
 ---
-Run the task through local Grok Build with explicit multi-agent guidance.
+Hand `$ARGUMENTS` to the local authenticated Grok Build CLI as a multi-perspective review.
 
-Raw arguments:
-`$ARGUMENTS`
+- **This is a hand-off.** Do not perform the review yourself.
+- The companion instructs Grok to run several perspectives (reviewer, critic, security/reliability,
+  implementer) and synthesize one report.
+- **Do not pick a model or effort.** The router does that.
+- Runs read-only (`read_file,list_dir,grep`) unless `GROK_BRIDGE_ALLOW_WRITES=1`.
+- With no focus given, Grok reviews the current git state.
 
-Core rules:
-- This is a delegation hand-off. Do not perform the review or analysis yourself.
-- Grok is instructed (via the companion) to use multiple agents / subagents / best-of-n / different personas (reviewer, explorer/critic, security/reliability, implementer, etc.) and synthesize one clear report.
-- Return Grok's output verbatim.
-- Read-only from Claude's perspective for the analysis work.
-
-Execution mode (same pattern as imagine):
-- `--background` → host background Bash.
-- `--wait` → foreground.
-- Otherwise recommend background for anything non-trivial and AskUserQuestion.
-
-Forwarding:
+Foreground (default):
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/grok-companion.mjs" review "$ARGUMENTS"
 ```
 
-Background launch uses the host `run_in_background: true` mechanism.
+If the arguments contain `--background`, run the same command with `run_in_background: true`
+and tell the user to check `/grok:status`.
 
-Return the companion stdout exactly (the synthesized multi-perspective report Grok produced). No extra commentary.
-
-The result may reference workspace files or diffs that Grok inspected.
+Print the companion's stdout **verbatim**. No preamble, no summary, no commentary.

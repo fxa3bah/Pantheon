@@ -26,13 +26,15 @@ Three safety rails keep this from being reckless: an assistant receiving delegat
 
 | From → To | Typical task | Model used |
 |---|---|---|
-| Claude → Grok | Generate an image | Grok Build (high effort) |
-| Claude → Grok | Multi-angle creative review | Grok Build (max effort, 3 takes) |
+| Claude → Grok | Generate an image | **Grok 4.5** (high effort) |
+| Claude → Grok | Multi-angle creative review | **Grok 4.5** (high effort; 3 takes are asked for in the prompt, since the CLI has no best-of-n flag) |
 | Claude → Codex | Implement a feature | GPT-5.3 Codex Spark (high effort) |
 | Grok → Claude | Architecture | Claude Opus 4.8 |
 | Grok → Claude | Data model / second opinion | Claude Sonnet 5 (auto-escalates to Opus 4.8 on risk) |
 | Grok → Claude | Security review | Claude Opus 4.8 (always — never downgraded) |
-| Codex → Grok | Generate campaign assets | Grok Build (high effort) |
+| Codex → Grok | Generate campaign assets | **Grok 4.5** (high effort) |
+
+*(Grok 4.5 cutover 2026-07-08 — see `model-routing.mjs`. CLI efforts are high|medium|low only.)*
 
 ## How to use it
 

@@ -24,12 +24,12 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { assertHopAllowed, childEnv, armTimeout, sanitizeClaudeArgs, startHeartbeat, currentHop } from './lib/bridge-guard.mjs';
+import { assertHopAllowed, childEnv, armTimeout, sanitizeClaudeArgs, startHeartbeat, currentHop , GUARDED_SPAWN_OPTS} from './lib/bridge-guard.mjs';
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
 import { withCompliance } from './lib/compliance.mjs';
 import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.mjs';
-import { makeJobId, splitRequestAndExtra, saveJob } from './lib/companion-common.mjs';
+import { makeJobId, splitRequestAndExtra, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
 
 
 const VALUE_FLAGS = new Set([
@@ -47,6 +47,24 @@ const VALUE_FLAGS = new Set([
   '--add-dir',
   '--mcp-config',
   '--json-schema',
+  '--lane', '--from',
+]);
+
+// Every flag name the argv splitter is allowed to lift OUT of the request text.
+// A delegated prompt is untrusted prose that gets word-split, so anything not
+// listed here stays part of the prompt instead of becoming a real CLI flag.
+// The dangerous/boolean ones are listed precisely so the write gate still sees
+// and strips them rather than passing them along as prose.
+const KNOWN_FLAGS = new Set([
+  ...VALUE_FLAGS,
+  '--bare',
+  '--verbose',
+  '--dangerously-skip-permissions',
+  '--dangerously-bypass-approvals-and-sandbox',
+  '--plugin-dir',
+  '--agents',
+  // companion-level, consumed by extractCompanionFlags and never forwarded
+  '--lane', '--from',
 ]);
 
 export function resolveClaudeBinary() {
@@ -95,6 +113,18 @@ function hasFlag(args, flagName) {
   return args.some(tok => (tok.includes('=') ? tok.slice(0, tok.indexOf('=')) : tok) === flagName);
 }
 
+// Value of `--flag value` or `--flag=value`, or null if absent. Used to record
+// the model that actually reached the CLI when a caller flag beat the router.
+export function flagValue(args, flagName) {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    const eq = tok.indexOf('=');
+    if (eq !== -1 && tok.slice(0, eq) === flagName) return tok.slice(eq + 1);
+    if (tok === flagName) return args[i + 1] ?? null;
+  }
+  return null;
+}
+
 function hasApiKeyAuth() {
   return Boolean(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
 }
@@ -114,15 +144,24 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
   // silently drive Claude with autonomous edits + Bash on this machine.
   const withoutBare = stripFlag(extraArgs, '--bare');
   const useBare = shouldUseBareClaude(withoutBare.present);
-  const { args: safeExtra, notes } = sanitizeClaudeArgs(withoutBare.args);
+  const routed = options.routed;
+  // A security review is force-pinned in the router; tell the gate so a caller
+  // --model can't undo the pin one layer below it.
+  const pinnedModel = routed?.taskClass === 'security-review' ? routed.model : null;
+  const { args: safeExtra, notes } = sanitizeClaudeArgs(withoutBare.args, { pinnedModel });
   if (withoutBare.present && !useBare) {
     notes.push('ignored --bare because local OAuth/keychain auth requires non-bare Claude mode');
   }
   if (notes.length) console.error('[pantheon] permission gate:', notes.join('; '));
 
-  const routed = options.routed;
-  const modelArgs = hasFlag(safeExtra, '--model') ? [] : (routed?.args ?? []);
+  const callerModelWins = hasFlag(safeExtra, '--model');
+  const modelArgs = callerModelWins ? [] : (routed?.args ?? []);
   const permissionArgs = hasFlag(safeExtra, '--permission-mode') ? [] : ['--permission-mode', 'plan'];
+  // Report the model that actually ran, not the one the router picked. When a
+  // caller --model suppressed routed.args the ledger used to record the routed
+  // model anyway — the audit trail lied in exactly the override case you'd most
+  // want audited.
+  const effectiveModel = callerModelWins ? flagValue(safeExtra, '--model') : (routed?.model ?? null);
 
   // Base flags for local OAuth bridge delegation. `--bare` is only safe when
   // API-key/settings auth is configured because it intentionally skips keychain reads.
@@ -137,12 +176,17 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
 
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      ...GUARDED_SPAWN_OPTS,
       env: childEnv()
     });
     if (jobId) upsertJob(jobId, { pid: child.pid, status: 'running', hop: currentHop() });
     const stopBeat = startHeartbeat('Claude');
-    armTimeout(child, reject);
+    armTimeout(child, reject, undefined, {
+      onTimedOut: () => {
+        stopBeat();
+        if (jobId) upsertJob(jobId, { status: 'timed_out' });
+      }
+    });
 
     let stdout = '';
     let stderr = '';
@@ -153,7 +197,7 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
     child.on('close', (code) => {
       stopBeat();
       if (code === 0) {
-        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code, notes, model: routed?.model ?? null, bare: useBare });
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code, notes, model: effectiveModel, bare: useBare });
       } else {
         reject(new Error(`claude exited with code ${code}\nstdout: ${stdout}\nstderr: ${stderr}`));
       }
@@ -172,11 +216,17 @@ export async function delegateToClaude(request, extraCliArgs = []) {
   const parsedInput = parsePantheonInput(request);
   const prompt = parsedInput.prompt;
   const packet = parsedInput.packet;
-  const direction = packet && ROUTING_TABLE[`${packet.from}-to-${packet.to}`]
-    ? `${packet.from}-to-${packet.to}`
+  // The packet names its own direction, but the packet is untrusted input from
+  // the delegating agent. Only the `from` half is theirs to declare — `to` is
+  // fixed by which companion is running. Accepting a spoofed `…-to-codex` here
+  // made resolveModel() pick the codex agent and emit codex-shaped `-m`/`-c`
+  // args for the `claude` binary, and falsified the ledger's provenance.
+  const claimed = packet ? `${packet.from}-to-${packet.to}` : null;
+  const direction = claimed && claimed.endsWith('-to-claude') && ROUTING_TABLE[claimed]
+    ? claimed
     : 'grok-to-claude';
   const taskClass = classifyTask(direction, 'task', packet);
-  const routed = resolveModel({ direction, taskClass, packet, contextChars: prompt.length });
+  const routed = resolveModel({ direction, taskClass, packet, promptText: prompt, contextChars: prompt.length });
   const routingFields = {
     model: routed.model,
     effort: routed.effort ?? null,
@@ -232,15 +282,17 @@ export async function delegateToClaude(request, extraCliArgs = []) {
 
 // Direct CLI usage (for testing the reverse bridge from a Grok skill or terminal)
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { request, extra } = splitRequestAndExtra(process.argv.slice(2), VALUE_FLAGS);
+  const { request, extra } = splitRequestAndExtra(process.argv.slice(2), VALUE_FLAGS, '--', KNOWN_FLAGS);
+  const { lane, from, rest } = extractCompanionFlags(extra);
 
   if (!request) {
-    console.log('Usage: node claude-companion.mjs "task for Claude" [--model claude-opus-4-8 --permission-mode plan]');
-    console.log('Default bridge mode uses local OAuth/keychain auth: claude --model claude-opus-4-8 -p ... --output-format json --permission-mode plan');
+    console.log('Usage: node claude-companion.mjs "task for Claude" [--lane architecture|security|review|task] [--from grok|codex]');
+    console.log('  --lane builds the Pantheon packet for you; without it the task is sent as a plain prompt.');
+    console.log('  Uses local OAuth/keychain auth: claude --model ... -p ... --output-format json --permission-mode plan');
     process.exit(1);
   }
 
-  delegateToClaude(request, extra).then(r => {
+  delegateToClaude(buildPayload(request, { lane, from: from || 'grok', to: 'claude' }), rest).then(r => {
     console.log(r.output);
     if (r.pantheon_warning) {
       console.log(`\n[pantheon_warning] ${r.pantheon_warning}`);

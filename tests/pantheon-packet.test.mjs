@@ -22,12 +22,12 @@ test('valid Pantheon packet becomes a handoff prompt', () => {
     budget: { timeout_ms: 300000 },
     return_format: 'paths and concise notes',
     provenance: 'Codex request',
-    model: 'grok-build'
+    model: 'grok-4.5'
   }));
   assert.equal(parsed.isPacket, true);
   assert.match(parsed.prompt, /Pantheon handoff packet/);
   assert.match(parsed.prompt, /Objective:\nCreate a campaign image/);
-  assert.equal(packetModel(parsed.packet), 'grok-build');
+  assert.equal(packetModel(parsed.packet), 'grok-4.5');
 });
 
 test('Pantheon packet requires core routing fields', () => {

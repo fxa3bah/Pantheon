@@ -127,7 +127,7 @@ packet metadata in the ledger.
 | `GROK_BRIDGE_MEDIA_DIR` | `~/Pictures/grok-imagine` | Gallery root for generated assets |
 | `GROK_BRIDGE_MAX_HOPS` | `2` | Loop-guard ceiling for cross-delegation |
 | `GROK_BRIDGE_TIMEOUT_MS` | `300000` | Kill a headless child after this long |
-| `GROK_BRIDGE_ALLOW_WRITES` | unset | `=1` lets the reverse leg run Claude with write/exec perms |
+| `GROK_BRIDGE_ALLOW_WRITES` | unset | `=1` lets ANY delegated leg (Claude, Codex, Grok) run with write/exec perms |
 | `GROK_BRIDGE_QUIET` | unset | `=1` silences the progress heartbeat |
 | `GROK_BRIDGE_NO_COMPLIANCE` | unset | `=1` skips the operating-context header prepended to delegated prompts |
 
@@ -146,6 +146,11 @@ invariants so `AGENTS.md`-reading agents (Codex) pick them up natively too.
 
 - `assertHopAllowed(dir)` / `childEnv()` — **loop guard.** `BRIDGE_HOP` env increments on every
   spawned child; refuses once `>= MAX_HOPS`. Stops runaway Claude→Grok→Claude recursion.
+- `sanitizeGrokArgs(args, {needsMedia})` — **write gate (forward leg).** Analysis lanes (task, review,
+  health) are pinned to `--tools read_file,list_dir,grep`; only the media lane keeps `--always-approve`,
+  because image/video generation cannot run under a read-only tool set. Mechanism matters here: on grok
+  CLI 0.2.112 `--permission-mode plan` does NOT block writes and `--deny`/`--disallowed-tools` are
+  silently ignored — a `--tools` allowlist is the only thing that actually gates. Verified live.
 - `sanitizeClaudeArgs(args)` — **write gate** (reverse leg). Unless `GROK_BRIDGE_ALLOW_WRITES=1`,
   strips `--dangerously-skip-permissions`, `--permission-mode bypassPermissions|acceptEdits`, and any
   caller `--allowedTools`, then pins read-only `Read,Glob,Grep`. Prevents Grok from silently driving
@@ -261,8 +266,10 @@ match (`claude-sonnet-5`).
 **88 tests pass** (`node --test tests/*.test.mjs`), including new `tests/model-routing.test.mjs` and
 `tests/codex-guard.test.mjs`.
 
-**Default tiers updated 2026-07-03:** reasoning→claude-opus-4-8, coding→gpt-5.3-codex-spark/grok-build;
-Fable and Sonnet removed from the table (`grok-build` IS Grok 4.3 — xAI's Grok Build CLI exposes no separate `grok-4.3` slug, so grok-build covers the Grok reasoning+coding default).
+**Default tiers updated 2026-07-03:** reasoning→claude-opus-4-8, coding→gpt-5.3-codex-spark;
+Fable removed from the table. Sonnet kept as balanced Claude tier.
+
+**Grok 4.5 cutover 2026-07-08:** all Grok routing defaults moved from `grok-build` (legacy / 4.3-era slug) to **`grok-4.5`**. Creative-review deep tier uses effort **`high`** (CLI no longer exposes `xhigh` on 4.5 — only high|medium|low). Single source of truth: `plugins/grok/scripts/lib/model-routing.mjs`. **Superseded in part on 2026-07-27 — see the CLI-contract entry below.**
 
 Sonnet 5 reintroduced as the balanced Claude tier (data-model + second-opinion, auto-escalating to Opus on risk); `[1m]` fallback back to sonnet.
 
@@ -277,3 +284,143 @@ these are repo-only source definitions; they install into `~/.codex/` only on an
 install, mirroring how the Grok-side skills are symlinked into `~/.grok/`. No companion `.mjs`,
 `model-routing.mjs`, or tests were touched — this was command/skill/doc surface only. `README.md` and
 `docs/PANTHEON-EXPLAINED.md` now carry a per-direction first-class-trigger table.
+
+## Change log — 2026-07-27 (CLI contract: the routing table now has to match reality)
+
+Review of the uncommitted Grok 4.5 cutover, cross-checked against the installed binaries and
+audited in parallel by Fable, Grok 4.5 and Codex. **The cutover was half-right**: `grok-4.5` @
+high/medium/low is correct and live-verified, but four of six live mesh legs were dead and the
+114-test suite was green throughout, because every routing test compared the table to itself.
+
+**Live-verified CLI facts (re-check with `node plugins/grok/scripts/probe-cli-capabilities.mjs`):**
+- `grok models` lists **exactly one** selectable model: `grok-4.5`. `grok-composer-2.5-fast` is a
+  config-level `fork_secondary_model` in `~/.grok/config.toml`, **not** a `-m` slug — passing it
+  errors `unknown model id`. It was the cheap/health/draft tier on three rows.
+- **`--best-of-n` does not exist** on the grok CLI (`unexpected argument`). It was emitted on both
+  `creative-review` rows, so `/grok-review` exited nonzero every time.
+- Codex `model_reasoning_effort=minimal` **HTTP 400s** (`tools cannot be used with reasoning.effort
+  'minimal': web_search`). It was the effort on both codex `health` rows.
+- Valid and confirmed: all four codex slugs (incl. `codex-auto-review`), codex `xhigh`, grok `low`.
+
+**New in `model-routing.mjs`: `AGENT_CAPABILITIES`** — a manifest of what each CLI *accepts*, next
+to the tables that say what we *want*. `validateRoutingTables()` diffs the two; `safeEffort()` drops
+an off-manifest effort rather than shipping it to a CLI that will reject it. `buildArgs()` no longer
+emits `--best-of-n` at all (`bestOfN` survives as routing intent for the prompt + ledger).
+
+**Argument injection (pre-existing, not from the cutover — the worst thing found).**
+`splitRequestAndExtra` word-split the prompt and treated *any* token starting with the flag prefix
+as a flag. A delegated prompt merely *mentioning* `--add-dir /Users/faadi` had those tokens removed
+from the request and appended to the child's argv; the write gates only strip a short denylist, so
+`--settings`, `--mcp-config`, `--add-dir`, `--model` all got through. It also corrupted honest
+prompts — the audit prompts written for this very review killed two legs on `unknown option`.
+Extraction now requires **both** an allowlist hit (`KNOWN_FLAGS` per companion) and position in an
+unbroken **trailing run** at the end of argv.
+
+**Other fixes this pass:**
+- `childEnv()` spread `...extra` after `BRIDGE_HOP`, so a caller could pass `BRIDGE_HOP: '0'` and
+  reset the loop guard. Hop is now applied last.
+- `state.mjs` joined an unvalidated job id into a path — `/grok:status ../../../tmp/x` escaped
+  `.grok-bridge`. Ids are charset-validated (`isValidJobId`); writes throw, reads return null.
+- Claude gate strips `--settings/--mcp-config/--plugin-dir/--agents/--add-dir` (all re-add tools
+  around the `Read,Glob,Grep` pin); codex gate strips `--add-dir/--enable/--disable`.
+- **Security-review pin was bypassable one layer below itself**: the router refuses to downgrade
+  `security-review`, but both companions let a caller `--model`/`-m` suppress `routed.args` entirely.
+  Gates now take `{ pinnedModel }` and strip the caller flag for that task class.
+- **Direction spoofing**: all three companions trusted `packet.from`/`packet.to`, so a packet could
+  claim `claude-to-codex` at the *claude* companion and get codex-shaped `-m`/`-c` args on the
+  `claude` binary, plus a falsified ledger direction. `to` is now fixed by whichever companion runs.
+- Ledger records the model that **actually ran**, not the routed one, when a caller flag won.
+
+**134 tests pass**, including new `tests/cli-contract.test.mjs` (manifest legality for every table
+row and every resolvable arg vector, prompt-injection cases, gate strips, hop reset, unsafe job ids).
+**Live `health --json --live` is 6/6 green** — it was 2/6 before this pass.
+
+## Change log — 2026-07-27b (closing the known-open list)
+
+Everything left open by the pass above is now fixed, except where noted as a deliberate decision.
+
+**The Grok leg is no longer the one unsandboxed hop.** `runGrokHeadless` hardcoded
+`--always-approve` and never sanitized caller flags, so any Claude/Codex→Grok hop had full
+write/exec while the other two legs were pinned. New `sanitizeGrokArgs()`. Finding the right
+mechanism required probing, and the obvious choices do not work — verified live on grok CLI 0.2.112:
+
+| Mechanism | Blocks writes? |
+|---|---|
+| `--permission-mode plan` | **No.** The model created the probe file anyway |
+| `--deny write` / `--disallowed-tools write,…` | **No.** Silently ignored, write succeeded |
+| `--tools read_file,list_dir,grep` | **Yes.** "No write/shell tool available in this session" |
+
+So the gate is a `--tools` allowlist. Analysis lanes (task/review/health) get it; the media lane
+keeps `--always-approve` because image generation cannot run read-only. End-to-end verified: a
+delegated `task` asked to write a file tried shell, `search_replace`, and native write tools, then
+reported BLOCKED, and no file was created.
+
+**Risk escalation actually fires now.** `keywordHit()` only scanned `packet.objective`/`constraints`,
+so the documented "auto-escalates on risk keywords" never triggered for a plain-string delegation —
+which is most of them. `resolveModel()` takes `promptText` and all three companions pass it. Also:
+object-valued `constraints` interpolated to `[object Object]` (now JSON-flattened); `data-loss` never
+matched the far commoner "data loss"; and `\bauth\w*` matched "author"/"authority" (now an explicit
+family pattern that still catches authn/authz/authentication/authorization).
+
+**Two escalation-ordering bugs.** A risk keyword now BEATS `budget.cost:'low'` — the cost cap was
+evaluated first, so an untrusted delegator could pin the cheap tier onto "rotate the production
+credentials" just by claiming low cost. And a **risk floor** now applies over `packet.model`/env
+models, which previously skipped `applyEscalation` entirely. Escalation only ever raises the tier.
+`escalationReason()` also reported `'retry'` whenever `attempt >= 2` even when an explicit
+`packet.escalate` was the real trigger, so the ledger's audit field could disagree with the cause.
+
+**Timeouts.** `armTimeout` killed only the direct PID, leaving the agent's subagents and shells
+running; it now kills the process group (`GUARDED_SPAWN_OPTS` adds `detached: true`), stops the
+heartbeat, and marks the job `timed_out`. A parent-exit reaper prevents detaching from orphaning a
+child. It also returns `{timer, clear, timedOut}` instead of a bare timer.
+
+**Media provenance.** Asset paths are parsed out of MODEL-GENERATED TEXT, so `filterTrustedMedia()`
+now drops anything outside a Grok session dir, the gallery, or tmp — model output could previously
+name any readable image and have it copied into the gallery. The no-paths fallback walked the entire
+cwd and copied any image touched in the last 120s (an unrelated screenshot, a repo asset); it now
+searches this cwd's Grok session directory instead.
+
+**Ledger race.** `upsertJob` is read-modify-write with no lock, so a companion writing `status` while
+`/grok:cancel` wrote `cancelled` could silently drop a patch. Now guarded by an atomic mkdir lock
+with stale-lock reclamation. Covered by a real multi-process test (8 concurrent writers, no lost
+patches).
+
+**Deliberately NOT fixed:** `explicitModel`/`explicitEffort`/`attempt` stay unwired. Wiring the
+caller `--model` flag to `explicitModel` would route it through the branch that bypasses the
+security-review pin — and on the reverse legs the "caller" IS the untrusted delegator. They are now
+documented as a reserved operator API, and caller model flags are handled (and gated) in the
+companions instead.
+
+**149 tests pass. Live `health --json --live` 6/6 after every change above**, including the detached
+spawn, and `/grok-imagine` re-verified end to end.
+
+## Change log — 2026-07-27c (slash-command simplification)
+
+The task/delegation commands had accumulated three different execution-mode policies and made the
+model hand-build escaped JSON. Both are gone.
+
+**`--lane` / `--from` are now companion-level flags.** `/grok:codex` and `/grok:delegate` used to
+embed a full `{"pantheon_packet":true,…,"objective":"<JSON-escaped user text>"}` blob directly in the
+command markdown — unreadable, and one stray quote from a malformed packet. `extractCompanionFlags()`
++ `buildPayload()` in `lib/companion-common.mjs` build the packet in code instead:
+
+```bash
+node plugins/grok/scripts/codex-companion.mjs "fix the failing auth test" --lane verify
+```
+
+Both flags are consumed by the companion and never forwarded to the child CLI (they are in each
+companion's `KNOWN_FLAGS` so the argv allowlist recognizes them). Omitting `--lane` still sends a
+plain prompt — no packet ceremony for a quick question.
+
+**One execution-mode rule everywhere: foreground by default, `--background` to detach.** `--wait` is
+removed (it meant "do the default"), and the per-invocation `AskUserQuestion` prompt is gone from
+`imagine`/`task`/`review` — it asked the user to predict runtime on every single call. `/grok:delegate`
+keeps its confirmation, because there the question is *which agent*, not *how long*.
+
+**Commands trimmed to what the model actually needs**: the hand-off rule, pass-through-verbatim,
+don't-pick-a-model, the gate status, and the command. `allowed-tools` narrowed to `Bash(node:*)`
+(plus `AskUserQuestion` for `/grok:delegate`) — these commands forward, they do not read the repo.
+`task.md` went 38 lines → 23, `codex.md` 43 → 30, `delegate.md` 78 → 41.
+
+Skill examples in `codex-to-grok` and `codex-to-claude` use `--lane` too. **155 tests pass**; `--lane
+security` verified to still resolve to the force-pinned `claude-opus-4-8`.

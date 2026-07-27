@@ -17,13 +17,14 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, MAX_HOPS, writesAllowed } from './lib/bridge-guard.mjs';
+import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, MAX_HOPS, writesAllowed, sanitizeGrokArgs , GUARDED_SPAWN_OPTS} from './lib/bridge-guard.mjs';
 import { upsertJob, readJob, listJobs } from './lib/state.mjs';
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { resolveModel, classifyTask, MODEL_TIERS, ROUTING_TABLE } from './lib/model-routing.mjs';
 import { withCompliance } from './lib/compliance.mjs';
-import { makeJobId, saveJob } from './lib/companion-common.mjs';
+import { makeJobId, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -103,8 +104,12 @@ function versionOf(bin, args = ['--version']) {
 
 // Resolves the direction for a packet-bearing (or plain) request, validated
 // against ROUTING_TABLE, falling back to this leg's legacy default direction.
+// `to` is not the packet's to declare — this companion only ever drives the
+// grok binary, so a claimed `…-to-claude`/`…-to-codex` would resolve another
+// agent's flag shape onto `grok` and mislabel the ledger. Only `from` is honored.
 function directionFor(packet, fallback = 'claude-to-grok') {
-  if (packet && ROUTING_TABLE[`${packet.from}-to-${packet.to}`]) return `${packet.from}-to-${packet.to}`;
+  const claimed = packet ? `${packet.from}-to-${packet.to}` : null;
+  if (claimed && claimed.endsWith('-to-grok') && ROUTING_TABLE[claimed]) return claimed;
   return fallback;
 }
 
@@ -119,7 +124,7 @@ function routingFieldsFor(routed) {
   };
 }
 
-async function runGrokHeadless(prompt, { extraArgs = [], jobId, label = 'Grok' } = {}) {
+async function runGrokHeadless(prompt, { extraArgs = [], jobId, label = 'Grok', needsMedia = false } = {}) {
   const grokBin = resolveGrokBinary();
   if (!grokBin) {
     console.error('ERROR: Could not find local authenticated grok binary.\nRun "grok login" (or the equivalent) in your terminal, then try again. The bridge only uses the already-logged-in local CLI — no API keys.');
@@ -129,22 +134,32 @@ async function runGrokHeadless(prompt, { extraArgs = [], jobId, label = 'Grok' }
   // Loop guard: refuse if we've already crossed the bridge too many times.
   assertHopAllowed('hand off to Grok');
 
+  // Write gate: analysis lanes get a read-only tool allowlist; only the media
+  // lane may execute tools. `--always-approve` is no longer unconditional — it
+  // is supplied by the gate, and only where generation actually needs it.
+  const { args: safeExtra, notes } = sanitizeGrokArgs(extraArgs, { needsMedia });
+  if (notes.length) console.error('[pantheon] permission gate:', notes.join('; '));
+
   const args = [
     '-p', withCompliance('grok', prompt),
-    '--always-approve',
     '--output-format', 'json',
     '--cwd', process.cwd(),
-    ...extraArgs
+    ...safeExtra
   ];
 
   return new Promise((resolve, reject) => {
     const child = spawn(grokBin, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      ...GUARDED_SPAWN_OPTS,
       env: childEnv()
     });
     if (jobId) upsertJob(jobId, { pid: child.pid, status: 'running', hop: currentHop() });
     const stopBeat = startHeartbeat(label);
-    armTimeout(child, reject);
+    armTimeout(child, reject, undefined, {
+      onTimedOut: () => {
+        stopBeat();
+        if (jobId) upsertJob(jobId, { status: 'timed_out' });
+      }
+    });
 
     let stdout = '';
     let stderr = '';
@@ -188,6 +203,32 @@ const MEDIA_EXT = 'jpg|jpeg|png|webp|gif|mp4|mov';
 // asset captured via different signals normalizes to one canonical path.
 function normMediaPath(p) {
   return p.replace(/^file:\/\//i, '').replace(/^\/{2,}/, '/').trim();
+}
+
+// Media paths come out of MODEL-GENERATED TEXT, which is untrusted: a prompt
+// (or a confused model) can name any readable image on the machine and the
+// companion would copy it into the gallery. Only three roots can legitimately
+// hold a freshly generated asset:
+//   - a Grok session dir (`<home>/.grok/sessions/…`, where Grok actually writes)
+//   - the gallery itself (re-referencing a prior job's output)
+//   - the system temp dir
+// Matched on the `/.grok/sessions/` segment rather than $HOME so the check does
+// not depend on which user is running.
+export function isTrustedMediaPath(p, { mediaRoot = MEDIA_ROOT, tmpDir = os.tmpdir() } = {}) {
+  if (typeof p !== 'string' || !p.startsWith('/')) return false;
+  if (p.includes('/..')) return false;
+  if (p.includes('/.grok/sessions/')) return true;
+  const under = (root) => Boolean(root) && (p === root || p.startsWith(root.endsWith('/') ? root : `${root}/`));
+  return under(mediaRoot) || under(tmpDir);
+}
+
+export function filterTrustedMedia(paths, opts) {
+  const kept = [];
+  for (const p of paths) {
+    if (isTrustedMediaPath(p, opts)) kept.push(p);
+    else console.error(`[pantheon] ignoring media path outside trusted roots: ${p}`);
+  }
+  return kept;
 }
 
 function extractMediaPaths(text) {
@@ -260,7 +301,7 @@ async function cmdImagine(rawArgs) {
 
   const direction = directionFor(parsedInput.packet);
   const taskClass = classifyTask(direction, 'imagine', parsedInput.packet);
-  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: prompt.length });
+  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, promptText: prompt, contextChars: prompt.length });
   const routingFields = routingFieldsFor(routed);
 
   const jobId = makeJobId('grok');
@@ -272,7 +313,7 @@ async function cmdImagine(rawArgs) {
   saveJob(jobId, direction, { type: 'imagine', request: rawArgs, status: 'running', gallery: galleryDir, ...routingFields, ...packetJobFields(parsedInput) });
 
   try {
-    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok Imagine', extraArgs: routed.args });
+    const { stdout } = await runGrokHeadless(prompt, { jobId, label: 'Grok Imagine', extraArgs: routed.args, needsMedia: true });
 
     // Decode JSON first: headless grok returns {text, thought, ...}. Asset paths
     // can appear in either field with REAL newlines; parsing the raw JSON string
@@ -287,12 +328,23 @@ async function cmdImagine(rawArgs) {
       searchText = [parsed.text, parsed.thought, parsed.result].filter(Boolean).join('\n');
     } catch {}
 
-    // Extract asset paths from multiple signals (BRIDGE_MEDIA + file:// + session paths).
-    let media = extractMediaPaths(searchText);
+    // Extract asset paths from multiple signals (BRIDGE_MEDIA + file:// + session
+    // paths), then drop anything outside a root Grok could legitimately have
+    // written to — the text these come from is model output, not a trusted list.
+    let media = filterTrustedMedia(extractMediaPaths(searchText));
 
-    // Last-resort fallback: recent files in cwd (older Grok behavior).
+    // Last-resort fallback for older Grok builds that did not announce paths.
+    // This used to walk the whole cwd, so an unrelated screenshot or a repo
+    // image touched in the last two minutes got copied into the gallery and
+    // reported as generated output. Search this cwd's Grok session dir instead:
+    // Grok URL-encodes the cwd into one literal directory name.
     if (media.length === 0) {
-      media = findRecentMedia(process.cwd(), 120);
+      const sessionDir = path.join(
+        process.env.HOME || '', '.grok', 'sessions', encodeURIComponent(process.cwd())
+      );
+      if (fs.existsSync(sessionDir)) {
+        media = findRecentMedia(sessionDir, 120).map(rel => path.join(sessionDir, rel));
+      }
     }
 
     // Copy to gallery with deterministic names and collect final paths + links
@@ -363,7 +415,7 @@ async function cmdReview(rawArgs) {
 
   const direction = directionFor(parsedInput.packet);
   const taskClass = classifyTask(direction, 'review', parsedInput.packet);
-  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: prompt.length });
+  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, promptText: prompt, contextChars: prompt.length });
   const routingFields = routingFieldsFor(routed);
 
   const jobId = makeJobId('grok');
@@ -392,7 +444,7 @@ async function cmdTask(rawArgs) {
   // Generic delegation used by the subagent. The .md already added routing flags if needed.
   const direction = directionFor(parsedInput.packet);
   const taskClass = classifyTask(direction, 'task', parsedInput.packet);
-  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, contextChars: requestText.length });
+  const routed = resolveModel({ direction, taskClass, packet: parsedInput.packet, promptText: requestText, contextChars: requestText.length });
   const routingFields = routingFieldsFor(routed);
 
   const jobId = makeJobId('grok');
@@ -645,13 +697,18 @@ function cmdCancel(args) {
 
 async function main() {
   const [, , sub, ...rest] = process.argv;
-  const raw = rest.join(' ').trim();
+  // `--lane`/`--from` are companion-level: they let a caller declare the kind of
+  // work without hand-writing a JSON packet, and must not end up inside the
+  // prompt text (rest is joined into one string below).
+  const { lane, from, rest: promptArgs } = extractCompanionFlags(rest);
+  const raw = promptArgs.join(' ').trim();
+  const payload = (text) => buildPayload(text, { lane, from, to: 'grok' });
 
   switch (sub) {
     case 'setup': return cmdSetup(rest);
-    case 'imagine': return cmdImagine(raw || 'a simple test image');
-    case 'review': return cmdReview(raw || 'review the recent changes in this workspace');
-    case 'task': return cmdTask(raw);
+    case 'imagine': return cmdImagine(payload(raw || 'a simple test image'));
+    case 'review': return cmdReview(payload(raw || 'review the recent changes in this workspace'));
+    case 'task': return cmdTask(payload(raw));
     case 'status': return cmdStatus(rest);
     case 'result': return cmdResult(rest);
     case 'cancel': return cmdCancel(rest);
@@ -659,6 +716,7 @@ async function main() {
     default:
       console.log('grok-companion (Pantheon bridge)');
       console.log('  setup | health [--json] [--live] | imagine <request> | review <request> | task <request> | status [id] | result [id] | cancel [id]');
+      console.log('  imagine/review/task also accept --lane <lane> and --from <agent> to build a Pantheon packet for you.');
       process.exit(1);
   }
 }

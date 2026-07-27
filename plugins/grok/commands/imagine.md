@@ -1,44 +1,25 @@
 ---
-description: Hand off all image + video generation and editing to Grok Build (Grok Imagine superpower). Claude deletes the task; Grok executes with its full tools and skill and returns artifacts.
-argument-hint: '<natural language request (generate / edit / video / variations / references)> [--background|--wait]'
+description: Hand off all image and video generation and editing to Grok Build (Grok Imagine). Grok executes with its full tooling and returns the artifacts.
+argument-hint: '<generate / edit / video / variations / references request> [--background]'
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
+allowed-tools: Bash(node:*)
 ---
-Run the visual task through the local authenticated Grok Build CLI (headless).
+Hand `$ARGUMENTS` to the local authenticated Grok Build CLI.
 
-Raw slash-command arguments:
-`$ARGUMENTS`
+- **This is a pure hand-off.** Do not generate or edit images yourself. Grok does the real work with
+  its Imagine models, reference handling, `image_to_video`, and its own subagents.
+- **Pass the request through verbatim** — reference paths, aspect hints, "edit the previous…",
+  "make a 6s cinematic…". Do not rewrite the creative intent. The companion builds the actual prompt.
+- **Do not pick a model or effort.** The router does that.
+- This is the one lane that may execute tools and write files: generation cannot run read-only.
 
-Core rules:
-- This is a pure hand-off ("Claude deletes"). Do not generate or edit images yourself.
-- Grok (with its Imagine models, imagine skill, reference handling, image_to_video, ffmpeg assembly, and optional internal subagents) does the real work.
-- Your only job is to forward cleanly and return Grok's output + any surfaced local media paths/markdown verbatim.
-- Support --background and --wait exactly as the host provides them.
-
-Execution mode:
-- If raw arguments contain `--background`, launch via Bash with run_in_background: true and tell the user to check `/grok:status`.
-- If `--wait`, run in foreground.
-- Otherwise estimate (cheap for most stills, recommend background for video or complex consistency work) and use AskUserQuestion once with the recommended option first.
-
-Argument handling:
-- Preserve the user's full request exactly (including any reference paths, aspect hints, "edit the previous...", "make a 6s cinematic...", etc.).
-- Do not rewrite the creative intent.
-- The companion script will craft the actual prompt sent to headless Grok.
-
-Forwarding:
+Foreground (default):
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/grok-companion.mjs" imagine "$ARGUMENTS"
 ```
 
-Background:
-```typescript
-Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/grok-companion.mjs" imagine "$ARGUMENTS"`,
-  description: "Grok Imagine task",
-  run_in_background: true
-})
-```
+Video and complex consistency work can take a few minutes. If the arguments contain `--background`,
+run the same command with `run_in_background: true` and tell the user to check `/grok:status`.
 
-Return the companion stdout **verbatim** (Grok's text + any ready markdown or local paths it produced). Do not paraphrase, summarize, or add commentary before or after.
-
-After success, the generated images/videos should be in the workspace (normalized under a clear media folder) and immediately usable.
+Print the companion's stdout **verbatim**, including the `file://` links and markdown embeds.
+Assets are copied into the dated gallery, never into the working directory.

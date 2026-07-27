@@ -35,9 +35,9 @@ import process from 'node:process';
 import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.mjs';
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
-import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, sanitizeCodexArgs } from './lib/bridge-guard.mjs';
+import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, sanitizeCodexArgs , GUARDED_SPAWN_OPTS} from './lib/bridge-guard.mjs';
 import { withCompliance } from './lib/compliance.mjs';
-import { makeJobId, splitRequestAndExtra, saveJob } from './lib/companion-common.mjs';
+import { makeJobId, splitRequestAndExtra, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
 
 export function resolveCodexBinary() {
   const which = process.platform === 'win32' ? 'where' : 'which';
@@ -68,6 +68,25 @@ const VALUE_FLAGS = new Set([
   '-m', '--model', '-c', '--config', '-s', '--sandbox', '-C', '--cd',
   '-i', '--image', '-p', '--profile', '--add-dir', '--local-provider',
   '--output-schema', '--color', '-o', '--output-last-message', '--enable', '--disable',
+  '--lane', '--from',
+]);
+
+// Allowlist of flag names the argv splitter may lift out of the request text.
+// Codex uses single-dash flags, so the old "any token starting with '-' is a
+// flag" rule was especially leaky against untrusted delegated prose. Anything
+// not listed stays in the prompt. Dangerous names are listed on purpose so the
+// write gate still gets to see and strip them.
+const KNOWN_FLAGS = new Set([
+  ...VALUE_FLAGS,
+  '--skip-git-repo-check',
+  '--json',
+  '--full-auto',
+  '--yolo',
+  '--dangerously-bypass-approvals-and-sandbox',
+  '-a', '--ask-for-approval',
+  '--oss',
+  // companion-level, consumed by extractCompanionFlags and never forwarded
+  '--lane', '--from',
 ]);
 
 export function hasFlag(args, flagName) {
@@ -147,10 +166,13 @@ async function runCodexHeadless(prompt, extraArgs = [], jobId, options = {}) {
 
   // Write gate: unless GROK_BRIDGE_ALLOW_WRITES=1, strip sandbox-bypass flags
   // and pin --sandbox read-only. See lib/bridge-guard.mjs#sanitizeCodexArgs.
-  const { args: safeExtra, notes } = sanitizeCodexArgs(extraArgs);
+  const routed = options.routed;
+  // Security reviews are force-pinned by the router; the gate strips a caller
+  // -m/--model so the pin can't be undone below it.
+  const pinnedModel = routed?.taskClass === 'security-review' ? routed.model : null;
+  const { args: safeExtra, notes } = sanitizeCodexArgs(extraArgs, { pinnedModel });
   if (notes.length) console.error('[pantheon] permission gate:', notes.join('; '));
 
-  const routed = options.routed;
   const modelArgs = codexModelArgs(routed, safeExtra);
   const lastMessageFile = path.join(os.tmpdir(), `pantheon-${jobId || generateJobId()}.txt`);
 
@@ -167,10 +189,15 @@ async function runCodexHeadless(prompt, extraArgs = [], jobId, options = {}) {
   ];
 
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv() });
+    const child = spawn(bin, args, { ...GUARDED_SPAWN_OPTS, env: childEnv() });
     if (jobId) upsertJob(jobId, { pid: child.pid, status: 'running', hop: currentHop() });
     const stopBeat = startHeartbeat('Codex');
-    armTimeout(child, reject);
+    armTimeout(child, reject, undefined, {
+      onTimedOut: () => {
+        stopBeat();
+        if (jobId) upsertJob(jobId, { status: 'timed_out' });
+      }
+    });
 
     let stdout = '';
     let stderr = '';
@@ -202,11 +229,16 @@ export async function delegateToCodex(request, extraCliArgs = []) {
   const prompt = parsedInput.prompt;
   const packet = parsedInput.packet;
 
-  const direction = packet && ROUTING_TABLE[`${packet.from}-to-${packet.to}`]
-    ? `${packet.from}-to-${packet.to}`
+  // `to` is fixed by which companion is running; only `from` is the packet's to
+  // declare. Accepting a spoofed `…-to-grok`/`…-to-claude` here made
+  // resolveModel() resolve a different agent's flag shape onto the codex binary
+  // and mislabeled the ledger.
+  const claimed = packet ? `${packet.from}-to-${packet.to}` : null;
+  const direction = claimed && claimed.endsWith('-to-codex') && ROUTING_TABLE[claimed]
+    ? claimed
     : 'claude-to-codex';
   const taskClass = classifyTask(direction, 'task', packet);
-  const routed = resolveModel({ direction, taskClass, packet });
+  const routed = resolveModel({ direction, taskClass, packet, promptText: prompt });
   const routingFields = routingFieldsFor(routed);
 
   saveJob(jobId, direction, {
@@ -244,15 +276,17 @@ export async function delegateToCodex(request, extraCliArgs = []) {
 
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { request, extra } = splitRequestAndExtra(process.argv.slice(2), VALUE_FLAGS, '-');
+  const { request, extra } = splitRequestAndExtra(process.argv.slice(2), VALUE_FLAGS, '-', KNOWN_FLAGS);
+  const { lane, from, rest } = extractCompanionFlags(extra);
 
   if (!request) {
-    console.log('Usage: node codex-companion.mjs "task for Codex" [-m gpt-5.5 -c model_reasoning_effort=medium --sandbox read-only]');
-    console.log('Default bridge mode shells local-OAuth codex: codex exec -m ... -c model_reasoning_effort=... --sandbox read-only --skip-git-repo-check -C <cwd> --json -o <file> "<prompt>"');
+    console.log('Usage: node codex-companion.mjs "task for Codex" [--lane implement|verify|review] [--from claude|grok]');
+    console.log('  --lane builds the Pantheon packet for you; without it the task is sent as a plain prompt.');
+    console.log('  Shells local-OAuth codex: codex exec -m ... -c model_reasoning_effort=... --sandbox read-only ...');
     process.exit(1);
   }
 
-  delegateToCodex(request, extra).then(r => {
+  delegateToCodex(buildPayload(request, { lane, from, to: 'codex' }), rest).then(r => {
     console.log(r.output);
     if (r.pantheon_warning) console.log(`\n[pantheon_warning] ${r.pantheon_warning}`);
     if (r.session_id) console.log(`\n[pantheon] Session ID: ${r.session_id}`);

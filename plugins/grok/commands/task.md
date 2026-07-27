@@ -1,37 +1,23 @@
 ---
-description: Hand a generic non-visual task to Grok Build (Claude -> Grok generic leg of Pantheon). For image/video work use /grok-imagine; for a multi-agent review use /grok-review.
-argument-hint: '<task for Grok> [--background|--wait]'
+description: Hand a generic non-visual task to Grok Build. For image/video use /grok:imagine; for a multi-perspective review use /grok:review.
+argument-hint: '<task for Grok> [--background]'
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(node:*), Bash(git:*), AskUserQuestion
+allowed-tools: Bash(node:*)
 ---
-Run a generic (non-visual) task through the local authenticated Grok Build CLI (headless).
+Hand `$ARGUMENTS` to the local authenticated Grok Build CLI.
 
-Raw slash-command arguments:
-`$ARGUMENTS`
+- **This is a hand-off.** Do not do the task yourself.
+- **Pass the request through verbatim.** Do not rewrite, narrow, or summarize it.
+- **Do not pick a model or effort.** The router does that.
+- Wrong command? Image/video → `/grok:imagine`. Multi-perspective review → `/grok:review`.
+- Runs read-only (`read_file,list_dir,grep`) unless `GROK_BRIDGE_ALLOW_WRITES=1`.
 
-Core rules:
-- This is a hand-off. Do not do the task yourself — Grok executes it.
-- This command is for **generic, non-visual** work. If the request is image/video generation or editing, tell the user to use `/grok-imagine` instead. If the request is explicitly a multi-agent/multi-perspective review or investigation, tell the user to use `/grok-review` instead.
-- Preserve the user's full request exactly — do not rewrite or narrow the intent.
-- The companion script (and Pantheon's model router) picks the model/effort automatically (routes to `grok-build` @ medium for generic tasks) — do not choose it yourself.
-
-Execution mode:
-- If raw arguments contain `--background`, launch via Bash with run_in_background: true and tell the user to check `/grok:status`.
-- If `--wait`, run in foreground.
-- Otherwise estimate (foreground for anything quick, recommend background for longer tasks) and use AskUserQuestion once with the recommended option first.
-
-Forwarding:
+Foreground (default):
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/grok-companion.mjs" task "$ARGUMENTS"
 ```
 
-Background:
-```typescript
-Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/grok-companion.mjs" task "$ARGUMENTS"`,
-  description: "Grok generic task",
-  run_in_background: true
-})
-```
+If the arguments contain `--background`, run the same command with `run_in_background: true`
+and tell the user to check `/grok:status`.
 
-Return the companion stdout **verbatim**. Do not paraphrase, summarize, or add commentary before or after.
+Print the companion's stdout **verbatim**. No preamble, no summary, no commentary.

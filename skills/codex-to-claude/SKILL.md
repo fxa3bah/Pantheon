@@ -50,7 +50,7 @@ node plugins/grok/scripts/claude-companion.mjs "Review this data model for edge 
 For a precise handoff, pass a JSON Pantheon packet instead of a plain string. The router uses `from`/`to` to pick the direction and `lane` to classify the task (`architecture`, `second-opinion`, `data-model`, `security-review`):
 
 ```bash
-node plugins/grok/scripts/claude-companion.mjs '{"pantheon_packet":true,"from":"codex","to":"claude","lane":"security-review","objective":"Review the new payment webhook handler for auth bypass risks.","context":"Handler lives in src/webhooks/payment.ts; recent diff adds a new signature-verification path.","constraints":{"mode":"read-only"},"return_format":"Findings ranked by severity, with concrete exploit scenarios.","provenance":"Delegated by Codex via Pantheon."}'
+node plugins/grok/scripts/claude-companion.mjs "Review the new payment webhook handler in src/webhooks/payment.ts for auth bypass risks. The recent diff adds a signature-verification path. Rank findings by severity with concrete exploit scenarios." --lane security --from codex
 ```
 
 You can also pass benign extra CLI flags that the companion will forward (advanced), such as `--model` or `--max-turns`.

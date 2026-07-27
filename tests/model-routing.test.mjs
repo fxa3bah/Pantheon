@@ -56,10 +56,12 @@ test('spot-check literal expected model IDs for representative table rows', () =
   assert.equal(implement.effort, 'high');
 
   const imagine = resolveModel({ direction: 'claude-to-grok', taskClass: 'imagine', env: NO_ENV });
-  assert.equal(imagine.model, 'grok-build');
+  assert.equal(imagine.model, 'grok-4.5');
   assert.equal(imagine.effort, 'high');
 
   const creativeReview = resolveModel({ direction: 'claude-to-grok', taskClass: 'creative-review', env: NO_ENV });
+  assert.equal(creativeReview.model, 'grok-4.5');
+  assert.equal(creativeReview.effort, 'high');
   assert.equal(creativeReview.bestOfN, 3);
 });
 
@@ -219,15 +221,28 @@ test('escalation: attempt >= 2 escalates via retry', () => {
   assert.equal(result.escalated, 'retry');
 });
 
-test('escalation: budget.cost === "low" pins the cheap tier and blocks keyword escalation', () => {
+test('escalation: budget.cost === "low" pins the cheap tier for ordinary work', () => {
+  const result = resolveModel({
+    direction: 'grok-to-claude',
+    taskClass: 'second-opinion',
+    packet: { objective: 'rename a few variables for readability', budget: { cost: 'low' } },
+    env: NO_ENV
+  });
+  assert.equal(result.model, MODEL_TIERS.claude.cheap);
+  assert.equal(result.escalated, false);
+});
+
+test('escalation: a risk keyword BEATS budget.cost "low" (cost hints cannot downgrade risky work)', () => {
+  // Previously the cost cap was evaluated first, so an untrusted delegator
+  // could pin the cheap tier onto a security task just by claiming cost:'low'.
   const result = resolveModel({
     direction: 'grok-to-claude',
     taskClass: 'second-opinion',
     packet: { objective: 'this needs a security review', budget: { cost: 'low' } },
     env: NO_ENV
   });
-  assert.equal(result.model, MODEL_TIERS.claude.cheap);
-  assert.equal(result.escalated, false);
+  assert.equal(result.model, MODEL_TIERS.claude.deep);
+  assert.equal(result.escalated, 'keyword');
 });
 
 test('escalation: packet.escalate === true still escalates even under budget.cost "low"', () => {
@@ -341,7 +356,7 @@ test('[1m] context: codex and grok legs ignore contextChars — no suffix applie
     contextChars: 700000,
     env: NO_ENV
   });
-  assert.equal(grokResult.model, 'grok-build');
+  assert.equal(grokResult.model, 'grok-4.5');
   assert.ok(!grokResult.model.includes('[1m]'));
 });
 
@@ -370,9 +385,22 @@ test('args: a codex row builds ["-m", <model>, "-c", "model_reasoning_effort=<ef
   assert.deepEqual(result.args, ['-m', 'gpt-5.3-codex-spark', '-c', 'model_reasoning_effort=high']);
 });
 
-test('args: grok creative-review includes ["--best-of-n", "3"]', () => {
+test('args: grok creative-review never emits --best-of-n (no such CLI flag)', () => {
   const result = resolveModel({ direction: 'claude-to-grok', taskClass: 'creative-review', env: NO_ENV });
-  assert.deepEqual(result.args, ['--model', 'grok-build', '--effort', 'xhigh', '--best-of-n', '3']);
+  // The grok CLI has no --best-of-n flag — emitting it made the whole review
+  // leg exit on "unexpected argument". bestOfN survives as routing intent only.
+  assert.deepEqual(result.args, ['--model', 'grok-4.5', '--effort', 'high']);
+  assert.equal(result.bestOfN, 3);
+});
+
+test('args: a packet-supplied best_of_n still never reaches the CLI', () => {
+  const result = resolveModel({
+    direction: 'claude-to-grok',
+    taskClass: 'task',
+    packet: { pantheon_packet: true, from: 'claude', to: 'grok', best_of_n: 7 },
+    env: NO_ENV
+  });
+  assert.ok(!result.args.includes('--best-of-n'));
 });
 
 // -----------------------------------------------------------------------
@@ -400,11 +428,11 @@ test('classifyTask: subcommand "imagine" maps to imagine', () => {
   assert.equal(classifyTask('claude-to-grok', 'imagine', null), 'imagine');
 });
 
-test('classifyTask: codex-to-grok generic "task" resolves to the grok-build task row, not the health tier', () => {
+test('classifyTask: codex-to-grok generic "task" resolves to the grok-4.5 task row, not the health tier', () => {
   const taskClass = classifyTask('codex-to-grok', 'task', null);
   assert.equal(taskClass, 'task');
   const result = resolveModel({ direction: 'codex-to-grok', taskClass, env: NO_ENV });
-  assert.equal(result.model, 'grok-build');
+  assert.equal(result.model, 'grok-4.5');
   assert.equal(result.effort, 'medium');
 });
 

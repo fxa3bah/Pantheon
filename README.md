@@ -57,10 +57,10 @@ Every model choice in Pantheon flows through one file, `plugins/grok/scripts/lib
 
 | Direction | Task | Model @ effort |
 |---|---|---|
-| claude → grok | imagine | `grok-build` @ high |
-| claude → grok | creative-review | `grok-build` @ xhigh, best-of-3 |
-| claude → grok | task | `grok-build` @ medium |
-| claude → grok | health | `grok-composer-2.5-fast` @ low |
+| claude → grok | imagine | `grok-4.5` @ high |
+| claude → grok | creative-review | `grok-4.5` @ high (best-of-3 requested in-prompt, not a CLI flag) |
+| claude → grok | task | `grok-4.5` @ medium |
+| claude → grok | health | `grok-4.5` @ low |
 | claude → codex | implement | `gpt-5.3-codex-spark` @ high |
 | claude → codex | review | `codex-auto-review` @ high |
 | claude → codex | verify | `gpt-5.3-codex-spark` @ high |
@@ -75,10 +75,10 @@ Every model choice in Pantheon flows through one file, `plugins/grok/scripts/lib
 | codex → claude | reasoning / architecture | `claude-opus-4-8` |
 | codex → claude | second-opinion | `claude-sonnet-5` (auto-escalates to `claude-opus-4-8` on risk) |
 | codex → claude | security-review | `claude-opus-4-8` |
-| codex → grok | imagine / assets | `grok-build` @ high |
-| codex → grok | creative-review | `grok-build` @ xhigh, best-of-3 |
-| codex → grok | task | `grok-build` @ medium |
-| codex → grok | draft | `grok-composer-2.5-fast` @ medium |
+| codex → grok | imagine / assets | `grok-4.5` @ high |
+| codex → grok | creative-review | `grok-4.5` @ high (best-of-3 requested in-prompt, not a CLI flag) |
+| codex → grok | task | `grok-4.5` @ medium |
+| codex → grok | draft | `grok-4.5` @ medium |
 
 ### Precedence
 
@@ -203,15 +203,39 @@ For anything slow (video, a multi-agent review), add `--background`, then poll `
 
 | Command | What it does |
 |---|---|
-| `/grok-imagine <request> [--background\|--wait]` | Hand off any image or video task (stills, edits, variations, references, short video). Grok uses its Imagine models. |
+| `/grok-imagine <request> [--background]` | Hand off any image or video task (stills, edits, variations, references, short video). Grok uses its Imagine models. |
 | `/grok-review [focus] [--background]` | Delegate a review or investigation. Grok runs multiple perspectives and returns one synthesized report. |
-| `/grok:task <request> [--background\|--wait]` | Hand a generic non-visual task to Grok Build. |
-| `/grok:codex <task> [--background\|--wait]` | Delegate implementation, build, verify, or review work to the local Codex CLI. |
+| `/grok:task <request> [--background]` | Hand a generic non-visual task to Grok Build. |
+| `/grok:codex <task> [--background]` | Delegate implementation, build, verify, or review work to the local Codex CLI. |
+| `/grok:delegate <task>` | Suggest the best-fit agent for a task and run it **only after you confirm**. |
 | `/grok:setup [--json]` | Check that the local `grok` binary and login are ready. |
 | `/grok:health [--json] [--live]` | Show Pantheon health across Grok, Claude, and Codex. `--live` runs the read-only handshakes. |
 | `/grok:status [job-id] [--json]` | List recent jobs (status, media count, cost) or show one. |
 | `/grok:result [job-id] [--json]` | Print a job's output and media paths. |
 | `/grok:cancel [job-id]` | Send a real SIGTERM to a running job and mark it cancelled. |
+
+Every command runs in the **foreground by default**; add `--background` to detach and follow up with
+`/grok:status`. (There is no `--wait` — foreground is already the default.)
+
+### Lanes
+
+The companions accept `--lane <lane>` and build the Pantheon packet for you, so a delegation is a
+plain string plus one flag rather than a hand-escaped JSON blob:
+
+```bash
+node plugins/grok/scripts/codex-companion.mjs "fix the failing auth test" --lane verify
+node plugins/grok/scripts/claude-companion.mjs "is this schema right?" --lane architecture
+node plugins/grok/scripts/grok-companion.mjs task "three campaign directions" --lane review
+```
+
+| Agent | Lanes |
+|---|---|
+| Codex | `implement` (default), `verify`, `review` |
+| Claude | `architecture`, `second-opinion`, `data-model`, `security` |
+| Grok | `imagine`, `review` |
+
+Omit `--lane` and the request is sent as a plain prompt — no packet ceremony for a quick question.
+`--lane`/`--from` are consumed by the companion and never reach the child CLI.
 
 ---
 
@@ -250,7 +274,7 @@ All three companions share one job ledger at `./.grok-bridge/<job>.json` in the 
 | `GROK_BRIDGE_MEDIA_DIR` | `~/Pictures/grok-imagine` | Gallery root for generated assets. |
 | `GROK_BRIDGE_MAX_HOPS` | `2` | Loop-guard ceiling. Stops runaway cross-delegation. |
 | `GROK_BRIDGE_TIMEOUT_MS` | `300000` | Kill a headless child after this long (raise it for long video). |
-| `GROK_BRIDGE_ALLOW_WRITES` | unset | `=1` lets the reverse leg run Claude with write and exec tools. |
+| `GROK_BRIDGE_ALLOW_WRITES` | unset | `=1` lets any delegated leg (Claude, Codex, Grok) run with write and exec tools. |
 | `GROK_BRIDGE_QUIET` | unset | `=1` silences the progress heartbeat. |
 
 ### Safety, by default
@@ -258,7 +282,7 @@ All three companions share one job ledger at `./.grok-bridge/<job>.json` in the 
 Pantheon is built so one agent driving another cannot quietly run away or do damage:
 
 - **Loop guard.** Each crossed hop increments a counter. Once it reaches `GROK_BRIDGE_MAX_HOPS` (default 2), further delegation is refused. No infinite Claude -> Grok -> Claude recursion.
-- **Write gate.** By default the reverse leg runs Claude **read-only** (`Read,Glob,Grep`). Dangerous flags like `--dangerously-skip-permissions` and `--permission-mode bypassPermissions` are stripped and surfaced as a warning. You opt into writes explicitly with `GROK_BRIDGE_ALLOW_WRITES=1`.
+- **Write gate (all three legs).** By default a delegated Claude runs **read-only** (`Read,Glob,Grep`), a delegated Codex runs `--sandbox read-only`, and a delegated Grok is pinned to `--tools read_file,list_dir,grep`. The one exception is `/grok-imagine`, which must execute image tools to generate anything. Dangerous flags like `--dangerously-skip-permissions` and `--permission-mode bypassPermissions` are stripped and surfaced as a warning. You opt into writes explicitly with `GROK_BRIDGE_ALLOW_WRITES=1`.
 - **Timeouts** kill hung children, and `/grok:cancel` sends a real SIGTERM.
 
 ---
