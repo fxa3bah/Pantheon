@@ -10,11 +10,11 @@
  *   imagine <request...>
  *   review <request...>
  *   task <request...>   (used by the grok-delegate subagent)
+ *   auto <request...>   (Good/Better/Best route across detected harnesses)
+ *   scan                (inventory installed harnesses)
  *   status [job-id]
  *   result [job-id]
- *   cancel [job-id]
  */
-
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, MAX_HOPS, writesAllowed, sanitizeGrokArgs , GUARDED_SPAWN_OPTS} from './lib/bridge-guard.mjs';
@@ -23,6 +23,11 @@ import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { resolveModel, classifyTask, MODEL_TIERS, ROUTING_TABLE } from './lib/model-routing.mjs';
 import { withCompliance } from './lib/compliance.mjs';
 import { makeJobId, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
+import { detectHarnesses } from './lib/harness-detect.mjs';
+import { pickRoute } from './lib/auto-route.mjs';
+import { runExtraHarness } from './lib/extra-harness.mjs';
+import { delegateToClaude } from './claude-companion.mjs';
+import { delegateToCodex } from './codex-companion.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -289,6 +294,8 @@ async function cmdImagine(rawArgs) {
   const prompt = [
     'You are Grok. The user has handed off a visual task via Pantheon.',
     'Use your Imagine superpower (image_gen, image_edit, image_to_video, reference_to_video, reference consistency, ffmpeg assembly, etc.) exactly as described in your imagine skill.',
+    'Prefer the current Imagine Image 2.0 engine when the tool exposes a model choice (API slug grok-imagine-image-2.0). Do not pass that slug as `grok -m` — it is not a selectable CLI model. Stay on grok-4.6 and let Imagine tools pick the image engine.',
+    'Do not route this job to ChatGPT Images 2.0 / gpt-image-2. That is an OpenAI API image model, not a Codex or Grok -m slug.',
     'User request (preserve intent exactly):',
     requestText,
     '',
@@ -506,6 +513,7 @@ function cmdHealth(args) {
       writesAllowed: writesAllowed(),
       claudeBareRequested: process.env.GROK_BRIDGE_CLAUDE_BARE === '1'
     },
+    harnesses: detectHarnesses(),
     models: {
       grok: MODEL_TIERS.grok,
       claude: MODEL_TIERS.claude,
@@ -695,12 +703,105 @@ function cmdCancel(args) {
   }
 }
 
+function cmdScan(args) {
+  const asJson = args.includes('--json');
+  const inventory = detectHarnesses();
+  if (asJson) {
+    console.log(JSON.stringify(inventory, null, 2));
+    return inventory;
+  }
+  console.log(`Pantheon scan: ${inventory.found.length}/${inventory.scanned} harnesses present`);
+  for (const row of inventory.found) {
+    console.log(`  ${row.id.padEnd(12)} ${row.version || 'ok'}  ${row.path}`);
+  }
+  for (const row of inventory.missing) {
+    console.log(`  ${row.id.padEnd(12)} missing`);
+  }
+  return inventory;
+}
+
+async function cmdAuto(rawArgs, { quality, harness, lane } = {}) {
+  const parsedInput = parsePantheonInput(rawArgs);
+  const requestText = parsedInput.prompt || rawArgs;
+  if (!requestText) {
+    console.error('Usage: grok-companion auto <request> [--quality good|better|best] [--harness <id>] [--lane plan|imagine|implement|review]');
+    process.exit(1);
+  }
+  const inventory = detectHarnesses();
+  const route = pickRoute({
+    text: requestText,
+    kind: lane || parsedInput.packet?.lane || null,
+    quality: quality || parsedInput.packet?.quality || 'better',
+    inventory,
+    requestedHarness: harness || null
+  });
+  if (!route.harness) {
+    console.error(`[pantheon] no installed harness can handle kind=${route.kind}`);
+    process.exit(1);
+  }
+  console.log(`[pantheon] auto ${route.quality}/${route.kind} → ${route.harness}${route.model ? ` (${route.model}${route.effort ? '@' + route.effort : ''})` : ''}`);
+  if (route.fallbackFrom) {
+    console.error(`[pantheon] ${route.fallbackFrom} is not installed; fell back to ${route.harness}`);
+  }
+
+  const payload = buildPayload(requestText, {
+    lane: route.lane,
+    from: 'claude',
+    to: route.companion,
+    provenance: `Pantheon auto-route ${route.quality}/${route.kind}`
+  });
+
+  if (route.companion === 'grok') {
+    if (route.kind === 'imagine') return cmdImagine(payload);
+    if (route.kind === 'review') return cmdReview(payload);
+    return cmdTask(payload);
+  }
+  if (route.companion === 'claude') {
+    const result = await delegateToClaude(payload);
+    console.log(result.output);
+    return result;
+  }
+  if (route.companion === 'codex') {
+    const result = await delegateToCodex(payload);
+    console.log(result.output);
+    return result;
+  }
+  const bin = inventory.byId[route.harness]?.path;
+  if (!bin) {
+    console.error(`[pantheon] ${route.harness} is catalogued but has no path`);
+    process.exit(1);
+  }
+  const jobId = makeJobId(route.companion);
+  saveJob(jobId, route.direction, {
+    type: 'auto',
+    request: requestText,
+    status: 'running',
+    model: route.model,
+    effort: route.effort,
+    harness: route.harness,
+    quality: route.quality,
+    kind: route.kind
+  });
+  try {
+    const { stdout } = await runExtraHarness(bin, route, requestText, { jobId, label: route.harness });
+    saveJob(jobId, route.direction, { status: 'complete', output: stdout });
+    console.log(stdout);
+    console.log(`\n[pantheon] Job ${jobId} complete via ${route.harness}.`);
+    return { jobId, output: stdout, route };
+  } catch (e) {
+    saveJob(jobId, route.direction, { status: 'failed', error: e.message });
+    console.error('Auto job failed:', e.message);
+    process.exit(1);
+  }
+}
+
+
 async function main() {
   const [, , sub, ...rest] = process.argv;
   // `--lane`/`--from` are companion-level: they let a caller declare the kind of
   // work without hand-writing a JSON packet, and must not end up inside the
   // prompt text (rest is joined into one string below).
-  const { lane, from, rest: promptArgs } = extractCompanionFlags(rest);
+  const { lane, from, quality, harness, rest: promptArgs } = extractCompanionFlags(rest);
   const raw = promptArgs.join(' ').trim();
   const payload = (text) => buildPayload(text, { lane, from, to: 'grok' });
 
@@ -709,14 +810,17 @@ async function main() {
     case 'imagine': return cmdImagine(payload(raw || 'a simple test image'));
     case 'review': return cmdReview(payload(raw || 'review the recent changes in this workspace'));
     case 'task': return cmdTask(payload(raw));
+    case 'auto': return cmdAuto(payload(raw), { quality, harness, lane });
+    case 'scan': return cmdScan(rest);
     case 'status': return cmdStatus(rest);
     case 'result': return cmdResult(rest);
     case 'cancel': return cmdCancel(rest);
     case 'health': return cmdHealth(rest);
     default:
       console.log('grok-companion (Pantheon bridge)');
-      console.log('  setup | health [--json] [--live] | imagine <request> | review <request> | task <request> | status [id] | result [id] | cancel [id]');
-      console.log('  imagine/review/task also accept --lane <lane> and --from <agent> to build a Pantheon packet for you.');
+      console.log('  setup | health [--json] [--live] | scan [--json] | auto <request> [--quality good|better|best] [--harness <id>]');
+      console.log('  imagine <request> | review <request> | task <request> | status [id] | result [id] | cancel [id]');
+      console.log('  imagine/review/task/auto also accept --lane <lane> and --from <agent> to build a Pantheon packet for you.');
       process.exit(1);
   }
 }

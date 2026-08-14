@@ -21,5 +21,7 @@ test('health command emits static Pantheon JSON without live handshakes', () => 
   assert.equal(parsed.ok, true);
   assert.equal(parsed.pantheon.maxHops >= 1, true);
   assert.ok(parsed.legs['grok-to-claude']);
+  assert.ok(parsed.harnesses);
+  assert.ok(Array.isArray(parsed.harnesses.found));
   assert.deepEqual(parsed.live, {});
 });

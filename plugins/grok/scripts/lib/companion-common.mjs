@@ -96,18 +96,20 @@ export function splitRequestAndExtra(args, valueFlags, flagPrefix = '--', knownF
 // is without hand-building a JSON packet. The slash commands used to embed a
 // full `{"pantheon_packet":true,…}` blob with a JSON-escaped objective inline,
 // which is both unreadable and one bad quote away from a malformed packet.
-const COMPANION_FLAGS = new Set(['--lane', '--from']);
+const COMPANION_FLAGS = new Set(['--lane', '--from', '--quality', '--harness']);
 
 export const COMPANION_FLAG_NAMES = COMPANION_FLAGS;
 
 /**
  * Pull companion-level flags out of the pass-through arg list.
- * Returns { lane, from, rest } — `rest` is what the CLI write gate then sees.
+ * Returns { lane, from, quality, harness, rest } — `rest` is what the CLI write gate then sees.
  */
 export function extractCompanionFlags(extra = []) {
   const rest = [];
   let lane = null;
   let from = null;
+  let quality = null;
+  let harness = null;
   for (let i = 0; i < extra.length; i++) {
     const tok = extra[i];
     const eq = tok.indexOf('=');
@@ -115,9 +117,11 @@ export function extractCompanionFlags(extra = []) {
     if (!COMPANION_FLAGS.has(name)) { rest.push(tok); continue; }
     const value = eq === -1 ? extra[++i] : tok.slice(eq + 1);
     if (name === '--lane') lane = value ?? null;
-    else from = value ?? null;
+    else if (name === '--from') from = value ?? null;
+    else if (name === '--quality') quality = value ?? null;
+    else harness = value ?? null;
   }
-  return { lane, from, rest };
+  return { lane, from, quality, harness, rest };
 }
 
 /**

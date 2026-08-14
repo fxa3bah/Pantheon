@@ -89,7 +89,7 @@ test('an untrusted packet effort cannot put an invalid --effort on the argv', ()
   const r = resolveModel({
     direction: 'claude-to-grok',
     taskClass: 'task',
-    packet: { pantheon_packet: true, from: 'claude', to: 'grok', model: 'grok-4.5', effort: 'ludicrous' },
+    packet: { pantheon_packet: true, from: 'claude', to: 'grok', model: 'grok-4.6', effort: 'ludicrous' },
     env: NO_ENV
   });
   assert.equal(r.source, 'packet');
@@ -100,10 +100,10 @@ test('a valid packet effort still reaches the argv', () => {
   const r = resolveModel({
     direction: 'claude-to-grok',
     taskClass: 'task',
-    packet: { pantheon_packet: true, from: 'claude', to: 'grok', model: 'grok-4.5', effort: 'low' },
+    packet: { pantheon_packet: true, from: 'claude', to: 'grok', model: 'grok-4.6', effort: 'low' },
     env: NO_ENV
   });
-  assert.deepEqual(r.args, ['--model', 'grok-4.5', '--effort', 'low']);
+  assert.deepEqual(r.args, ['--model', 'grok-4.6', '--effort', 'low']);
 });
 
 test('the grok cheap tier is a model the grok CLI can actually select', () => {

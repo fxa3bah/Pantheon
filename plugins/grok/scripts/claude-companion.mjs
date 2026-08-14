@@ -7,7 +7,7 @@
  * this shells the authenticated `claude` binary using its official headless mode.
  *
  * Recommended invocation for this local OAuth bridge:
- *   claude --model claude-opus-4-8 -p "task..." --output-format json --permission-mode plan
+ *   claude --model claude-opus-5 -p "task..." --output-format json --permission-mode plan
  *
  * Key flags supported:
  * - --bare : Only when API-key/settings auth is explicitly configured. Bare mode skips keychain/OAuth.

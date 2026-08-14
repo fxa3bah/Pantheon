@@ -1,8 +1,8 @@
 # Pantheon
 
-**A local, OAuth-only delegation mesh for your AI coding agents.** Pantheon lets **Claude Code**, **Grok Build**, and **Codex**, all installed and logged in on the same machine, hand work to each other. No API keys, no remote services, no daemons. Each leg simply shells the CLI you are already logged into through its normal headless mode.
+**A local, OAuth-only delegation mesh for your AI coding agents.** Pantheon lets **Claude Code**, **Grok Build**, and **Codex**, all installed and logged in on the same machine, hand work to each other. It can also scan other local harnesses (Oh My Pi, OpenCode, Agy, Hermes, Warp Oz, UltraCode, Qoder) and auto-route a job to the best one that is actually installed. No API keys, no remote services, no daemons. Each mesh leg shells the CLI you are already logged into through its normal headless mode.
 
-The headline use is **image and video generation**: from inside Claude Code you type `/grok:imagine` and Grok's Imagine models do the work, with the finished assets dropped back into your session as clickable links. On top of that, any agent can ask another for a second opinion, an implementation pass, or a multi-agent review.
+The headline use is **image and video generation**: from inside Claude Code you type `/grok:imagine` and Grok's Imagine tools do the work on `grok-4.6`, with the finished assets dropped back into your session as clickable links. Imagine Image 2.0 (`grok-imagine-image-2.0`) and ChatGPT Images 2.0 (`gpt-image-2`) are API image engines, not CLI `-m` slugs, so they are never passed as model flags. On top of that, any agent can ask another for a second opinion, an implementation pass, or a multi-agent review.
 
 ```
 You in Claude Code:  /grok:imagine a cinematic product shot of a linen napkin on marble, 3:2
@@ -21,7 +21,7 @@ Pantheon is a mesh of six directions. Be honest about maturity before you instal
 
 | Direction | Maturity | How you use it |
 |---|---|---|
-| **Claude -> Grok** | Polished | `/grok:imagine`, `/grok:review`, `/grok:task` slash commands |
+| **Claude -> Grok** | Polished | `/grok:imagine`, `/grok:review`, `/grok:task`, `/grok:auto`, `/grok:scan` |
 | **Grok -> Claude** | Polished | `claude-delegate` skill + `claude-second-opinion` agent |
 | **Claude -> Codex** | Real | `/grok:codex` slash command, or `node plugins/grok/scripts/codex-companion.mjs "task"` directly, spawns `codex exec` |
 | **Grok -> Codex** | Real | `codex-delegate` skill → the same `codex-companion.mjs` |
@@ -39,6 +39,7 @@ You do not need all three agents. If you only have Claude Code and Grok, the hea
 | Claude -> Grok (visual) | Claude Code | `/grok:imagine` |
 | Claude -> Grok (review) | Claude Code | `/grok:review` |
 | Claude -> Grok (generic) | Claude Code | `/grok:task` |
+| Claude -> any installed harness | Claude Code | `/grok:auto`, `/grok:scan` |
 | Claude -> Codex | Claude Code | `/grok:codex` |
 | Grok -> Claude | Grok CLI | `claude-delegate` skill |
 | Grok -> Codex | Grok CLI | `codex-delegate` skill |
@@ -57,28 +58,28 @@ Every model choice in Pantheon flows through one file, `plugins/grok/scripts/lib
 
 | Direction | Task | Model @ effort |
 |---|---|---|
-| claude → grok | imagine | `grok-4.5` @ high |
-| claude → grok | creative-review | `grok-4.5` @ high (best-of-3 requested in-prompt, not a CLI flag) |
-| claude → grok | task | `grok-4.5` @ medium |
-| claude → grok | health | `grok-4.5` @ low |
+| claude → grok | imagine | `grok-4.6` @ high |
+| claude → grok | creative-review | `grok-4.6` @ high (best-of-3 requested in-prompt, not a CLI flag) |
+| claude → grok | task | `grok-4.6` @ medium |
+| claude → grok | health | `grok-4.6` @ low |
 | claude → codex | implement | `gpt-5.3-codex-spark` @ high |
 | claude → codex | review | `codex-auto-review` @ high |
 | claude → codex | verify | `gpt-5.3-codex-spark` @ high |
-| claude → codex | health | `gpt-5.4-mini` @ minimal |
-| grok → claude | architecture | `claude-opus-4-8` |
-| grok → claude | data-model / second-opinion | `claude-sonnet-5` (auto-escalates to `claude-opus-4-8` on risk) |
-| grok → claude | security-review | `claude-opus-4-8` |
+| claude → codex | health | `gpt-5.4-mini` @ low |
+| grok → claude | architecture | `claude-opus-5` |
+| grok → claude | data-model / second-opinion | `claude-sonnet-5` (auto-escalates to `claude-opus-5` on risk) |
+| grok → claude | security-review | `claude-opus-5` |
 | grok → claude | summarize / health | `claude-haiku-4-5` |
 | grok → codex | implement | `gpt-5.3-codex-spark` @ high |
 | grok → codex | review | `codex-auto-review` @ high |
 | grok → codex | verify | `gpt-5.3-codex-spark` @ high |
-| codex → claude | reasoning / architecture | `claude-opus-4-8` |
-| codex → claude | second-opinion | `claude-sonnet-5` (auto-escalates to `claude-opus-4-8` on risk) |
-| codex → claude | security-review | `claude-opus-4-8` |
-| codex → grok | imagine / assets | `grok-4.5` @ high |
-| codex → grok | creative-review | `grok-4.5` @ high (best-of-3 requested in-prompt, not a CLI flag) |
-| codex → grok | task | `grok-4.5` @ medium |
-| codex → grok | draft | `grok-4.5` @ medium |
+| codex → claude | reasoning / architecture | `claude-opus-5` |
+| codex → claude | second-opinion | `claude-sonnet-5` (auto-escalates to `claude-opus-5` on risk) |
+| codex → claude | security-review | `claude-opus-5` |
+| codex → grok | imagine / assets | `grok-4.6` @ high |
+| codex → grok | creative-review | `grok-4.6` @ high (best-of-3 requested in-prompt, not a CLI flag) |
+| codex → grok | task | `grok-4.6` @ medium |
+| codex → grok | draft | `grok-4.6` @ medium |
 
 ### Precedence
 
@@ -94,8 +95,26 @@ For every hop, `resolveModel()` picks the model in this order — first match wi
 
 - **Auto-escalates to the deep tier** on risk keywords (`security`, `auth`, `payment`, `credential`, `secret`, `data-loss`, `migration`, `destructive`, `production` — stem-matched, so "authentication" and "migrations" both hit) in a packet's `objective`/`constraints`, or on `packet.escalate: true`, `packet.budget.cost: "high"`, or a retry.
 - **Caps to the cheap tier** when `packet.budget.cost: "low"`.
-- **`security-review` is force-pinned to `claude-opus-4-8`** and cannot be downgraded by an untrusted packet or env override — only an explicit human `--model` beats it.
+- **`security-review` is force-pinned to `claude-opus-5`** and cannot be downgraded by an untrusted packet or env override — only an explicit human `--model` beats it.
 - **Long-context suffix:** Claude legs get a `[1m]` context-window model when the prompt plus context exceeds ~600k characters.
+
+### Harness scan and auto-route
+
+`/grok:scan` inventories every catalogued CLI on this machine (PATH first, then known home paths). `/grok:auto` classifies the job and walks a Good / Better / Best preference list of **present** harnesses.
+
+| Quality | Meaning |
+|---|---|
+| `good` | Cheapest present option that can do the job |
+| `better` | Default. Mid-list present option |
+| `best` | Deepest present option |
+
+Image and video stay on Grok when Grok is installed. `"plan this using ultracode"` is a requested-harness phrase: if UltraCode is missing, the pick records `fallbackFrom` and uses the next present planner.
+
+```bash
+/grok:scan
+/grok:auto plan this using ultracode --quality best
+node plugins/grok/scripts/grok-companion.mjs auto "implement the helper" --quality good
+```
 
 ---
 
@@ -188,6 +207,8 @@ A passing `--live` run means every available direction actually answered. The he
 ## Quick start
 
 ```
+/grok:scan
+/grok:auto plan this using ultracode --quality best
 /grok:imagine a dramatic low-angle product shot of a folded heavy linen napkin on cool marble, soft window light, 3:2
 /grok:imagine turn the previous image into a 6-second slow push-in with subtle fabric movement
 /grok:review the auth flow and state-machine changes on this branch --background
@@ -195,21 +216,21 @@ A passing `--live` run means every available direction actually answered. The he
 /grok:result
 ```
 
-For anything slow (video, a multi-agent review), add `--background`, then poll `/grok:status` and fetch with `/grok:result`.
-
 ---
 
 ## Commands (in Claude Code)
 
 | Command | What it does |
 |---|---|
-| `/grok:imagine <request> [--background]` | Hand off any image or video task (stills, edits, variations, references, short video). Grok uses its Imagine models. |
+| `/grok:imagine <request> [--background]` | Hand off any image or video task (stills, edits, variations, references, short video). Grok runs on `grok-4.6` and uses Imagine tools. |
 | `/grok:review [focus] [--background]` | Delegate a review or investigation. Grok runs multiple perspectives and returns one synthesized report. |
 | `/grok:task <request> [--background]` | Hand a generic non-visual task to Grok Build. |
+| `/grok:auto <request> [--quality good\|better\|best] [--harness <id>] [--background]` | Scan installed harnesses and route the job to the best present fit. |
+| `/grok:scan [--json]` | Inventory installed coding-agent CLIs and report which ones Pantheon can route to. |
 | `/grok:codex <task> [--background]` | Delegate implementation, build, verify, or review work to the local Codex CLI. |
 | `/grok:delegate <task>` | Suggest the best-fit agent for a task and run it **only after you confirm**. |
 | `/grok:setup [--json]` | Check that the local `grok` binary and login are ready. |
-| `/grok:health [--json] [--live]` | Show Pantheon health across Grok, Claude, and Codex. `--live` runs the read-only handshakes. |
+| `/grok:health [--json] [--live]` | Show Pantheon health across Grok, Claude, Codex, and scanned harnesses. `--live` runs the read-only handshakes. |
 | `/grok:status [job-id] [--json]` | List recent jobs (status, media count, cost) or show one. |
 | `/grok:result [job-id] [--json]` | Print a job's output and media paths. |
 | `/grok:cancel [job-id]` | Send a real SIGTERM to a running job and mark it cancelled. |
@@ -257,7 +278,7 @@ Every generated asset is copied into a dated gallery, never dumped into your wor
 
 **Claude -> Grok.** The slash command shells `node .../grok-companion.mjs imagine "$ARGUMENTS"`, which spawns your local `grok` in headless mode (`grok -p <prompt> --always-approve --output-format json`). Grok generates into its session directory; the companion copies the assets into the gallery and returns Grok's text and links verbatim.
 
-**Grok -> Claude.** The `claude-delegate` skill shells `node .../claude-companion.mjs "task" [flags]`, which runs `claude --model claude-opus-4-8 -p <task> --output-format json --permission-mode plan`. This uses your local login. (`--bare` is only used when you have explicitly configured API-key auth, because bare mode skips the keychain and OAuth.)
+**Grok -> Claude.** The `claude-delegate` skill shells `node .../claude-companion.mjs "task" [flags]`, which runs `claude --model claude-opus-5 -p <task> --output-format json --permission-mode plan`. This uses your local login. (`--bare` is only used when you have explicitly configured API-key auth, because bare mode skips the keychain and OAuth.)
 
 **Claude/Grok -> Codex.** `node .../codex-companion.mjs "task" [flags]` shells `codex exec -m <model> -c model_reasoning_effort=<effort> --sandbox read-only --skip-git-repo-check -C <cwd> <prompt>`. It shares the same loop guard, write gate, timeout, heartbeat, and job ledger as the other two companions.
 
@@ -273,7 +294,7 @@ All three companions share one job ledger at `./.grok-bridge/<job>.json` in the 
 |---|---|---|
 | `GROK_BRIDGE_MEDIA_DIR` | `~/Pictures/grok-imagine` | Gallery root for generated assets. |
 | `GROK_BRIDGE_MAX_HOPS` | `2` | Loop-guard ceiling. Stops runaway cross-delegation. |
-| `GROK_BRIDGE_TIMEOUT_MS` | `300000` | Kill a headless child after this long (raise it for long video). |
+| `GROK_BRIDGE_TIMEOUT_MS` | `900000` | Kill a headless child after this long (15 minutes; raise it for long video). |
 | `GROK_BRIDGE_ALLOW_WRITES` | unset | `=1` lets any delegated leg (Claude, Codex, Grok) run with write and exec tools. |
 | `GROK_BRIDGE_QUIET` | unset | `=1` silences the progress heartbeat. |
 
@@ -304,12 +325,17 @@ Pantheon is built so one agent driving another cannot quietly run away or do dam
 ## Development and testing
 
 ```bash
-# Unit tests (loop guard, write gate, media extraction, packets, health)
+# Unit tests (loop guard, write gate, media extraction, packets, health, harness scan, auto-route)
 npm test
 
 # Parse / syntax check
-node --check plugins/grok/scripts/grok-companion.mjs
-node --check plugins/grok/scripts/claude-companion.mjs
+node --check plugins/grok/scripts/*.mjs plugins/grok/scripts/lib/*.mjs
+
+# Live CLI contract vs AGENT_CAPABILITIES
+node plugins/grok/scripts/probe-cli-capabilities.mjs
+
+# Inventory installed harnesses
+node plugins/grok/scripts/grok-companion.mjs scan
 ```
 
 Architecture, invariants, and the full change log are in [`CLAUDE.md`](./CLAUDE.md). The original design audit is in [`docs/BRIDGE-AUDIT.md`](./docs/BRIDGE-AUDIT.md).

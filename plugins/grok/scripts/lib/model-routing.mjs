@@ -34,14 +34,14 @@ function deepFreeze(value) {
 // `node plugins/grok/scripts/probe-cli-capabilities.mjs` when a CLI updates.
 export const AGENT_CAPABILITIES = deepFreeze({
   claude: {
-    models: ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'],
+    models: ['claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'],
     // The claude CLI DOES take `--effort low|medium|high|xhigh|max`. Pantheon
     // does not route it yet — no claude row carries an effort, so every Claude
     // leg runs at the CLI default. Listed here so the manifest stays honest
     // (and so buildArgs would emit a legal value if a row ever adds one).
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     supportsBestOfN: false,
-    contextSuffixModels: ['claude-sonnet-5', 'claude-opus-4-8']
+    contextSuffixModels: ['claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-8']
   },
   codex: {
     models: ['gpt-5.5', 'gpt-5.3-codex-spark', 'codex-auto-review', 'gpt-5.4-mini'],
@@ -52,10 +52,11 @@ export const AGENT_CAPABILITIES = deepFreeze({
     contextSuffixModels: []
   },
   grok: {
-    // `grok models` lists exactly one selectable model. grok-composer-2.5-fast
-    // is only a config-level fork_secondary_model, NOT a `-m` slug.
-    models: ['grok-4.5'],
-    efforts: ['low', 'medium', 'high'],  // no xhigh on 4.5
+    // Live `grok models` (CLI 1.0.3, 2026-08-14): grok-4.6 (default) and
+    // grok-4.5. Imagine Image 2.0 (`grok-imagine-image-2.0`) and ChatGPT
+    // Images 2.0 (`gpt-image-2`) are API image engines, NOT `-m` slugs.
+    models: ['grok-4.6', 'grok-4.5'],
+    efforts: ['low', 'medium', 'high'],  // no xhigh
     supportsBestOfN: false,              // no --best-of-n flag exists
     contextSuffixModels: []
   }
@@ -64,8 +65,8 @@ export const AGENT_CAPABILITIES = deepFreeze({
 // Model tiers per agent (for health reporting).
 export const MODEL_TIERS = deepFreeze({
   claude: {
-    deep: 'claude-opus-4-8',
-    default: 'claude-opus-4-8',
+    deep: 'claude-opus-5',
+    default: 'claude-opus-5',
     balanced: 'claude-sonnet-5',
     cheap: 'claude-haiku-4-5-20251001'
   },
@@ -78,14 +79,12 @@ export const MODEL_TIERS = deepFreeze({
     cheap: { model: 'gpt-5.4-mini', effort: 'low' }
   },
   grok: {
-    // Grok 4.5 (2026-07-08): CLI exposes high|medium|low only — no xhigh.
+    // Grok 4.6 (2026-08-14): CLI default. Efforts remain high|medium|low.
     // bestOfN is routing INTENT only (surfaced in the review prompt + ledger);
     // it is never emitted as a CLI flag — grok has no --best-of-n.
-    deepCreative: { model: 'grok-4.5', effort: 'high', bestOfN: 3 },
-    default: { model: 'grok-4.5', effort: 'high' },
-    // grok-composer-2.5-fast is not a selectable `-m` slug; 4.5 @ low is the
-    // real cheap tier.
-    cheap: { model: 'grok-4.5', effort: 'low' }
+    deepCreative: { model: 'grok-4.6', effort: 'high', bestOfN: 3 },
+    default: { model: 'grok-4.6', effort: 'high' },
+    cheap: { model: 'grok-4.6', effort: 'low' }
   }
 });
 
@@ -95,10 +94,10 @@ export const MODEL_TIERS = deepFreeze({
 // never emits `--effort` for claude regardless of what a row or packet says.
 export const ROUTING_TABLE = deepFreeze({
   'claude-to-grok': {
-    imagine: { model: 'grok-4.5', effort: 'high' },
-    'creative-review': { model: 'grok-4.5', effort: 'high', bestOfN: 3 },
-    task: { model: 'grok-4.5', effort: 'medium' },
-    health: { model: 'grok-4.5', effort: 'low' }
+    imagine: { model: 'grok-4.6', effort: 'high' },
+    'creative-review': { model: 'grok-4.6', effort: 'high', bestOfN: 3 },
+    task: { model: 'grok-4.6', effort: 'medium' },
+    health: { model: 'grok-4.6', effort: 'low' }
   },
   'claude-to-codex': {
     implement: { model: 'gpt-5.3-codex-spark', effort: 'high' },
@@ -107,10 +106,10 @@ export const ROUTING_TABLE = deepFreeze({
     health: { model: 'gpt-5.4-mini', effort: 'low' }
   },
   'grok-to-claude': {
-    architecture: { model: 'claude-opus-4-8' },
+    architecture: { model: 'claude-opus-5' },
     'second-opinion': { model: 'claude-sonnet-5' },
     'data-model': { model: 'claude-sonnet-5' },
-    'security-review': { model: 'claude-opus-4-8' },
+    'security-review': { model: 'claude-opus-5' },
     summarize: { model: 'claude-haiku-4-5-20251001' },
     health: { model: 'claude-haiku-4-5-20251001' }
   },
@@ -122,18 +121,18 @@ export const ROUTING_TABLE = deepFreeze({
   },
   'codex-to-claude': {
     'second-opinion': { model: 'claude-sonnet-5' },
-    reasoning: { model: 'claude-opus-4-8' },
-    architecture: { model: 'claude-opus-4-8' },
-    'security-review': { model: 'claude-opus-4-8' },
+    reasoning: { model: 'claude-opus-5' },
+    architecture: { model: 'claude-opus-5' },
+    'security-review': { model: 'claude-opus-5' },
     health: { model: 'claude-haiku-4-5-20251001' }
   },
   'codex-to-grok': {
-    imagine: { model: 'grok-4.5', effort: 'high' },
-    assets: { model: 'grok-4.5', effort: 'high' },
-    'creative-review': { model: 'grok-4.5', effort: 'high', bestOfN: 3 },
-    task: { model: 'grok-4.5', effort: 'medium' },
-    draft: { model: 'grok-4.5', effort: 'medium' },
-    health: { model: 'grok-4.5', effort: 'low' }
+    imagine: { model: 'grok-4.6', effort: 'high' },
+    assets: { model: 'grok-4.6', effort: 'high' },
+    'creative-review': { model: 'grok-4.6', effort: 'high', bestOfN: 3 },
+    task: { model: 'grok-4.6', effort: 'medium' },
+    draft: { model: 'grok-4.6', effort: 'medium' },
+    health: { model: 'grok-4.6', effort: 'low' }
   }
 });
 

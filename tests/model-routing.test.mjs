@@ -37,7 +37,7 @@ test('ROUTING_TABLE matrix: every (direction, taskClass) row resolves from the t
 test('spot-check literal expected model IDs for representative table rows', () => {
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'architecture', env: NO_ENV }).model,
-    'claude-opus-4-8'
+    'claude-opus-5'
   );
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'data-model', env: NO_ENV }).model,
@@ -49,18 +49,18 @@ test('spot-check literal expected model IDs for representative table rows', () =
   );
   assert.equal(
     resolveModel({ direction: 'grok-to-claude', taskClass: 'security-review', env: NO_ENV }).model,
-    'claude-opus-4-8'
+    'claude-opus-5'
   );
   const implement = resolveModel({ direction: 'claude-to-codex', taskClass: 'implement', env: NO_ENV });
   assert.equal(implement.model, 'gpt-5.3-codex-spark');
   assert.equal(implement.effort, 'high');
 
   const imagine = resolveModel({ direction: 'claude-to-grok', taskClass: 'imagine', env: NO_ENV });
-  assert.equal(imagine.model, 'grok-4.5');
+  assert.equal(imagine.model, 'grok-4.6');
   assert.equal(imagine.effort, 'high');
 
   const creativeReview = resolveModel({ direction: 'claude-to-grok', taskClass: 'creative-review', env: NO_ENV });
-  assert.equal(creativeReview.model, 'grok-4.5');
+  assert.equal(creativeReview.model, 'grok-4.6');
   assert.equal(creativeReview.effort, 'high');
   assert.equal(creativeReview.bestOfN, 3);
 });
@@ -152,14 +152,14 @@ test('balanced tier: grok-to-claude/data-model resolves to claude-sonnet-5 from 
   assert.equal(result.source, 'table');
 });
 
-test('balanced tier: grok-to-claude/data-model escalates to claude-opus-4-8 on a risk keyword in packet.objective', () => {
+test('balanced tier: grok-to-claude/data-model escalates to claude-opus-5 on a risk keyword in packet.objective', () => {
   const result = resolveModel({
     direction: 'grok-to-claude',
     taskClass: 'data-model',
     packet: { objective: 'migrate the production database' },
     env: NO_ENV
   });
-  assert.equal(result.model, 'claude-opus-4-8');
+  assert.equal(result.model, 'claude-opus-5');
   assert.equal(result.escalated, 'keyword');
 });
 
@@ -170,7 +170,7 @@ test('escalation: risk keyword in packet.objective escalates to the deep tier', 
     packet: { objective: 'audit the auth and security flow' },
     env: NO_ENV
   });
-  assert.equal(result.model, 'claude-opus-4-8');
+  assert.equal(result.model, 'claude-opus-5');
   assert.equal(result.escalated, 'keyword');
 });
 
@@ -183,7 +183,7 @@ test('escalation: risk keyword stem/prefix match catches morphological variants 
         packet: { objective: 'rotate the credentials and secrets' },
         env: NO_ENV
       });
-      assert.equal(rotate.model, 'claude-opus-4-8', `${direction}/${taskClass} credentials/secrets`);
+      assert.equal(rotate.model, 'claude-opus-5', `${direction}/${taskClass} credentials/secrets`);
       assert.equal(rotate.escalated, 'keyword');
 
       const authFlow = resolveModel({
@@ -192,7 +192,7 @@ test('escalation: risk keyword stem/prefix match catches morphological variants 
         packet: { objective: 'review the authentication flow' },
         env: NO_ENV
       });
-      assert.equal(authFlow.model, 'claude-opus-4-8', `${direction}/${taskClass} authentication`);
+      assert.equal(authFlow.model, 'claude-opus-5', `${direction}/${taskClass} authentication`);
       assert.equal(authFlow.escalated, 'keyword');
     }
   }
@@ -217,7 +217,7 @@ test('escalation: attempt >= 2 escalates via retry', () => {
     attempt: 2,
     env: NO_ENV
   });
-  assert.equal(result.model, 'claude-opus-4-8');
+  assert.equal(result.model, 'claude-opus-5');
   assert.equal(result.escalated, 'retry');
 });
 
@@ -233,8 +233,6 @@ test('escalation: budget.cost === "low" pins the cheap tier for ordinary work', 
 });
 
 test('escalation: a risk keyword BEATS budget.cost "low" (cost hints cannot downgrade risky work)', () => {
-  // Previously the cost cap was evaluated first, so an untrusted delegator
-  // could pin the cheap tier onto a security task just by claiming cost:'low'.
   const result = resolveModel({
     direction: 'grok-to-claude',
     taskClass: 'second-opinion',
@@ -263,7 +261,7 @@ test('escalation: security-review class is auto-deep and ignores a budget.cost "
     packet: { budget: { cost: 'low' } },
     env: NO_ENV
   });
-  assert.equal(result.model, 'claude-opus-4-8');
+  assert.equal(result.model, 'claude-opus-5');
 });
 
 test('security-review: an untrusted packet.model cannot downgrade a security review', () => {
@@ -273,7 +271,7 @@ test('security-review: an untrusted packet.model cannot downgrade a security rev
     packet: { model: 'claude-haiku-4-5-20251001' },
     env: NO_ENV
   });
-  assert.equal(result.model, 'claude-opus-4-8');
+  assert.equal(result.model, 'claude-opus-5');
   assert.equal(result.source, 'table');
 });
 
@@ -283,7 +281,7 @@ test('security-review: an env override cannot downgrade a security review', () =
     taskClass: 'security-review',
     env: { GROK_BRIDGE_CLAUDE_MODEL: 'claude-haiku-4-5-20251001' }
   });
-  assert.equal(result.model, 'claude-opus-4-8');
+  assert.equal(result.model, 'claude-opus-5');
   assert.equal(result.source, 'table');
 });
 
@@ -356,7 +354,7 @@ test('[1m] context: codex and grok legs ignore contextChars — no suffix applie
     contextChars: 700000,
     env: NO_ENV
   });
-  assert.equal(grokResult.model, 'grok-4.5');
+  assert.equal(grokResult.model, 'grok-4.6');
   assert.ok(!grokResult.model.includes('[1m]'));
 });
 
@@ -377,7 +375,7 @@ test('[1m] context: packet.budget.context === "1m" also triggers the suffix on a
 
 test('args: a claude row builds ["--model", <model>]', () => {
   const result = resolveModel({ direction: 'grok-to-claude', taskClass: 'architecture', env: NO_ENV });
-  assert.deepEqual(result.args, ['--model', 'claude-opus-4-8']);
+  assert.deepEqual(result.args, ['--model', 'claude-opus-5']);
 });
 
 test('args: a codex row builds ["-m", <model>, "-c", "model_reasoning_effort=<effort>"]', () => {
@@ -389,7 +387,7 @@ test('args: grok creative-review never emits --best-of-n (no such CLI flag)', ()
   const result = resolveModel({ direction: 'claude-to-grok', taskClass: 'creative-review', env: NO_ENV });
   // The grok CLI has no --best-of-n flag — emitting it made the whole review
   // leg exit on "unexpected argument". bestOfN survives as routing intent only.
-  assert.deepEqual(result.args, ['--model', 'grok-4.5', '--effort', 'high']);
+  assert.deepEqual(result.args, ['--model', 'grok-4.6', '--effort', 'high']);
   assert.equal(result.bestOfN, 3);
 });
 
@@ -428,11 +426,11 @@ test('classifyTask: subcommand "imagine" maps to imagine', () => {
   assert.equal(classifyTask('claude-to-grok', 'imagine', null), 'imagine');
 });
 
-test('classifyTask: codex-to-grok generic "task" resolves to the grok-4.5 task row, not the health tier', () => {
+test('classifyTask: codex-to-grok generic "task" resolves to the grok-4.6 task row, not the health tier', () => {
   const taskClass = classifyTask('codex-to-grok', 'task', null);
   assert.equal(taskClass, 'task');
   const result = resolveModel({ direction: 'codex-to-grok', taskClass, env: NO_ENV });
-  assert.equal(result.model, 'grok-4.5');
+  assert.equal(result.model, 'grok-4.6');
   assert.equal(result.effort, 'medium');
 });
 

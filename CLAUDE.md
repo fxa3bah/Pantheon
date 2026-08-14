@@ -455,3 +455,14 @@ still bounds a genuinely hung child.
 a sound workaround for payload size, but it runs *outside* every guarantee this repo provides: no
 loop guard, no write gate, no ledger entry, no timeout. Worth knowing especially because a shell
 function may inject `--dangerously-bypass-approvals-and-sandbox` into a bare `codex` invocation.
+
+## Change log — 2026-08-14 (live model cutover + harness auto-route)
+
+**CLI-verified model cutover.** `grok models` now lists `grok-4.6` (default) and `grok-4.5`. Claude Code 2.1.227 accepts `claude-opus-5` (live `-p` OK). Router defaults moved: Grok → `grok-4.6`; Claude deep/default/architecture/security → `claude-opus-5`. `grok-4.5` and `claude-opus-4-8` stay in `AGENT_CAPABILITIES` so old packets still resolve. Codex slugs unchanged (`gpt-5.3-codex-spark`, `codex-auto-review`, `gpt-5.5`, `gpt-5.4-mini`) because those are still the live Codex `-m` contract.
+
+**Image engines are not CLI `-m` slugs.** Official IDs: Grok Imagine Image 2.0 = `grok-imagine-image-2.0`; ChatGPT Images 2.0 = `gpt-image-2`. Passing either as `grok -m` / `codex -m` is illegal. `/grok:imagine` stays on `grok-4.6` and tells Grok to prefer Imagine Image 2.0 *inside* `image_gen`/`image_edit`.
+
+**Harness scan + Good/Better/Best auto-route.** New `lib/harness-detect.mjs` inventories Claude, Grok, Codex, OMP, OpenCode, Agy, Hermes, UltraCode, Qoder, Pi, Gemini, Antigravity, Warp Oz. New `lib/auto-route.mjs` classifies the job and walks a preference list. `/grok:scan` and `/grok:auto` (also `grok-companion scan|auto`). `"plan this using ultracode"` is a requested-harness phrase; if UltraCode is missing, the pick falls back and records `fallbackFrom`. Extra harnesses spawn read-only unless `GROK_BRIDGE_ALLOW_WRITES=1`.
+
+This is **not** IBM ACP / Zed Agent Client Protocol. Pantheon remains a local OAuth CLI mesh. Grok `--output-format streaming-json` is ACP-shaped session JSON; that is incidental.
+

@@ -80,8 +80,8 @@ Companions must store packet metadata in the job ledger and include `media[]` un
 | Agent | Default | Fast/cheap | High-stakes |
 | --- | --- | --- | --- |
 | Codex | `gpt-5.3-codex-spark` @ high reasoning (default) | `gpt-5.4-mini` | `gpt-5.5` @ xhigh for the deep tier; `codex-auto-review` for review |
-| Claude | `claude-opus-4-8` | `claude-haiku-4-5-20251001` | `claude-opus-4-8` for architecture/security-review; `claude-sonnet-5` (balanced tier) for data-model/second-opinion, auto-escalating to `claude-opus-4-8` on risk keywords, `escalate:true`, `budget.cost:high`, or a retry — Fable is not used |
-| Grok | `grok-4.5` (the only model `grok models` lists, Jul 2026) | `grok-4.5` @ low | `grok-4.5` @ **high** for deep-creative work, with best-of-3 requested inside the prompt — the CLI has no `--best-of-n` flag (efforts: high\|medium\|low only, no xhigh). `grok-composer-2.5-fast` is a config-level `fork_secondary_model`, NOT a selectable `-m` slug. Imagine exclusively for image/video |
+| Claude | `claude-opus-5` | `claude-haiku-4-5-20251001` | `claude-opus-5` for architecture/security-review; `claude-sonnet-5` (balanced tier) for data-model/second-opinion, auto-escalating to `claude-opus-5` on risk keywords, `escalate:true`, `budget.cost:high`, or a retry — Fable is not used |
+| Grok | `grok-4.6` (CLI default as of Aug 2026; `grok-4.5` still selectable) | `grok-4.6` @ low | `grok-4.6` @ **high** for deep-creative work, with best-of-3 requested inside the prompt — the CLI has no `--best-of-n` flag (efforts: high\|medium\|low only, no xhigh). Imagine Image 2.0 (`grok-imagine-image-2.0`) and ChatGPT Images 2.0 (`gpt-image-2`) are API image engines, not `-m` slugs |
 
 The routing table in `plugins/grok/scripts/lib/model-routing.mjs` is canonical; this doc mirrors it.
 
@@ -90,7 +90,7 @@ Bridge invocations should record the model actually requested or used in the job
 ## Implementation Notes
 
 - Grok -> Claude must default to non-bare local OAuth mode:
-  `claude --model claude-opus-4-8 -p ... --output-format json --permission-mode plan`.
+  `claude --model claude-opus-5 -p ... --output-format json --permission-mode plan`.
 - Use `--bare` only when API-key/settings auth is explicitly configured. Local OAuth/keychain auth is skipped in bare mode and produces `Not logged in`.
 - `/grok:health` should report binaries, versions, model defaults, write-gate status, hop status, configured legs, and optional live read-only handshakes.
 - This plan is project-agnostic. Project-specific protocols such as Texpert stay in their own project docs.
