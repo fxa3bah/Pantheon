@@ -201,7 +201,8 @@ export function pickRoute({
   kind = null,
   quality = 'better',
   inventory,
-  requestedHarness = null
+  requestedHarness = null,
+  host = null
 } = {}) {
   const resolvedKind = classifyJob(text, kind);
   const resolvedQuality = normalizeQuality(quality);
@@ -221,13 +222,16 @@ export function pickRoute({
 
   const modelSpec = harness ? modelFor(harness, resolvedKind, resolvedQuality) : { model: null, effort: null };
   const spawn = harness ? spawnPlan(harness, resolvedKind, resolvedQuality, modelSpec) : null;
-  const direction = harness && ROUTING_TABLE[`claude-to-${harness}`]
-    ? `claude-to-${harness}`
-    : harness === 'claude' ? 'grok-to-claude' : harness === 'codex' ? 'claude-to-codex' : harness === 'grok' ? 'claude-to-grok' : `claude-to-${harness || 'none'}`;
+  const from = host && present(inventory, host) ? host : (host || 'unknown');
+  const tableKey = `${from}-to-${harness}`;
+  const direction = harness && ROUTING_TABLE[tableKey]
+    ? tableKey
+    : harness === 'claude' ? `${from}-to-claude` : harness === 'codex' ? `${from}-to-codex` : harness === 'grok' ? `${from}-to-grok` : `${from}-to-${harness || 'none'}`;
 
   return Object.freeze({
     kind: resolvedKind,
     quality: resolvedQuality,
+    host: from,
     harness,
     companion: COMPANION_FOR[harness] || harness,
     lane: LANE_FOR_KIND[resolvedKind],

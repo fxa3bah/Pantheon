@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectHarnesses, HARNESS_CATALOG } from '../plugins/grok/scripts/lib/harness-detect.mjs';
+import { detectHarnesses, detectHost, annotateInventory, HARNESS_CATALOG } from '../plugins/grok/scripts/lib/harness-detect.mjs';
 
 test('catalog covers the requested harness set', () => {
   const ids = HARNESS_CATALOG.map((row) => row.id);
@@ -30,4 +30,29 @@ test('detectHarnesses falls back to known home paths when which misses', () => {
   });
   assert.equal(inventory.byId.grok.present, true);
   assert.match(inventory.byId.grok.path, /\.grok\/bin\/grok$/);
+});
+
+test('detectHost prefers --from over Claude env', () => {
+  const host = detectHost({ CLAUDECODE: '1' }, 'omp');
+  assert.equal(host.id, 'omp');
+  assert.equal(host.source, 'flag');
+});
+
+test('detectHost never defaults to grok', () => {
+  const host = detectHost({}, null);
+  assert.equal(host.id, null);
+  assert.equal(host.source, 'unknown');
+});
+
+test('annotateInventory marks the current host first', () => {
+  const inventory = detectHarnesses({
+    which: (name) => (name === 'claude' || name === 'grok' ? `/bin/${name}` : null),
+    exists: (p) => p === '/bin/claude' || p === '/bin/grok',
+    version: () => 'ok'
+  });
+  const annotated = annotateInventory(inventory, 'claude');
+  assert.equal(annotated.host, 'claude');
+  assert.equal(annotated.found[0].id, 'claude');
+  assert.equal(annotated.found[0].current, true);
+  assert.equal(annotated.found.find((row) => row.id === 'grok').current, false);
 });

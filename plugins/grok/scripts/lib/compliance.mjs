@@ -40,17 +40,10 @@ export function complianceHeader(agent) {
   const sources = AGENT_SOURCES[agent];
   if (!sources) return '';
   return [
-    '=== Pantheon operating context — honor this ===',
-    'You are running headless, delegated by another local agent via Pantheon. You are still a full',
-    'instance of yourself: keep obeying your normal operating rules and conventions, not just the task',
-    'below. Do not relax your standards because this is an automated/headless call.',
-    '',
-    'Before you answer:',
+    'Pantheon hop. Headless. Honor standing files, then do the task.',
     sources,
-    `- If the task produces ANY UI, visual, design, dashboard, HTML/email, or styling output, first read`,
-    `  and apply the shared design system at ${DESIGN_SYSTEM} (it is NOT auto-loaded here).`,
-    '- Apply your usual coding-style/immutability, tone (no sycophancy), and safety conventions.',
-    '=== end operating context ===',
+    `- UI / visual / dashboard / HTML email: read ${DESIGN_SYSTEM} first (not auto-loaded).`,
+    'Reply with status, result, files, blocker. No preamble. No sycophancy.',
     ''
   ].join('\n');
 }

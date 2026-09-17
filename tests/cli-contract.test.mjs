@@ -53,12 +53,12 @@ test('every resolvable arg vector uses only manifest-legal models and efforts', 
 });
 
 test('no arg vector anywhere emits a flag the target CLI does not have', () => {
-  // grok has no --best-of-n; claude has no effort flag; codex takes effort via -c.
+  // grok has no --best-of-n; claude and grok take --effort; codex takes effort via -c.
   for (const [direction, row] of Object.entries(ROUTING_TABLE)) {
     for (const taskClass of Object.keys(row)) {
       const { args, agent } = resolveModel({ direction, taskClass, env: NO_ENV });
       assert.ok(!args.includes('--best-of-n'), `${direction}/${taskClass} emitted --best-of-n`);
-      if (agent === 'claude') assert.ok(!args.includes('--effort'), `${direction}/${taskClass} emitted --effort to claude`);
+      if (agent === 'codex') assert.ok(!args.includes('--effort'), `${direction}/${taskClass} emitted --effort to codex`);
     }
   }
 });
@@ -70,14 +70,13 @@ test('safeEffort drops an effort the CLI rejects instead of passing it through',
   assert.equal(safeEffort('codex', 'xhigh'), 'xhigh');
 });
 
-test('claude legs never emit --effort even though the CLI accepts one', () => {
-  // The claude CLI does take --effort, but Pantheon does not route it; the
-  // claude branch of buildArgs must stay model-only.
+test('claude legs emit a manifest-legal --effort', () => {
   for (const direction of ['grok-to-claude', 'codex-to-claude']) {
     for (const taskClass of Object.keys(ROUTING_TABLE[direction])) {
       const { args } = resolveModel({ direction, taskClass, env: NO_ENV });
-      assert.deepEqual(args.length, 2, `${direction}/${taskClass} emitted ${args.join(' ')}`);
       assert.equal(args[0], '--model');
+      assert.equal(args[2], '--effort');
+      assert.ok(AGENT_CAPABILITIES.claude.efforts.includes(args[3]), `${direction}/${taskClass} effort ${args[3]}`);
     }
   }
 });

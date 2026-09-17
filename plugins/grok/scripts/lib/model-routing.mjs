@@ -35,10 +35,7 @@ function deepFreeze(value) {
 export const AGENT_CAPABILITIES = deepFreeze({
   claude: {
     models: ['claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'],
-    // The claude CLI DOES take `--effort low|medium|high|xhigh|max`. Pantheon
-    // does not route it yet — no claude row carries an effort, so every Claude
-    // leg runs at the CLI default. Listed here so the manifest stays honest
-    // (and so buildArgs would emit a legal value if a row ever adds one).
+    // Claude `--effort` is routed. Keep values inside this list.
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     supportsBestOfN: false,
     contextSuffixModels: ['claude-sonnet-5', 'claude-opus-5', 'claude-opus-4-8']
@@ -89,9 +86,7 @@ export const MODEL_TIERS = deepFreeze({
 });
 
 // Routing table: direction -> taskClass -> {model, effort?, bestOfN?}.
-// effort is omitted for claude rows: the CLI accepts `--effort`, but Pantheon
-// does not route it, so Claude legs take the CLI default. buildArgs() therefore
-// never emits `--effort` for claude regardless of what a row or packet says.
+// Claude rows now carry effort. buildArgs() emits `--effort` when safeEffort() allows it.
 export const ROUTING_TABLE = deepFreeze({
   'claude-to-grok': {
     imagine: { model: 'grok-4.6', effort: 'high' },
@@ -106,12 +101,12 @@ export const ROUTING_TABLE = deepFreeze({
     health: { model: 'gpt-5.4-mini', effort: 'low' }
   },
   'grok-to-claude': {
-    architecture: { model: 'claude-opus-5' },
-    'second-opinion': { model: 'claude-sonnet-5' },
-    'data-model': { model: 'claude-sonnet-5' },
-    'security-review': { model: 'claude-opus-5' },
-    summarize: { model: 'claude-haiku-4-5-20251001' },
-    health: { model: 'claude-haiku-4-5-20251001' }
+    architecture: { model: 'claude-opus-5', effort: 'high' },
+    'second-opinion': { model: 'claude-sonnet-5', effort: 'medium' },
+    'data-model': { model: 'claude-sonnet-5', effort: 'medium' },
+    'security-review': { model: 'claude-opus-5', effort: 'high' },
+    summarize: { model: 'claude-haiku-4-5-20251001', effort: 'low' },
+    health: { model: 'claude-haiku-4-5-20251001', effort: 'low' }
   },
   'grok-to-codex': {
     implement: { model: 'gpt-5.3-codex-spark', effort: 'high' },
@@ -120,11 +115,11 @@ export const ROUTING_TABLE = deepFreeze({
     health: { model: 'gpt-5.4-mini', effort: 'low' }
   },
   'codex-to-claude': {
-    'second-opinion': { model: 'claude-sonnet-5' },
-    reasoning: { model: 'claude-opus-5' },
-    architecture: { model: 'claude-opus-5' },
-    'security-review': { model: 'claude-opus-5' },
-    health: { model: 'claude-haiku-4-5-20251001' }
+    'second-opinion': { model: 'claude-sonnet-5', effort: 'medium' },
+    reasoning: { model: 'claude-opus-5', effort: 'high' },
+    architecture: { model: 'claude-opus-5', effort: 'high' },
+    'security-review': { model: 'claude-opus-5', effort: 'high' },
+    health: { model: 'claude-haiku-4-5-20251001', effort: 'low' }
   },
   'codex-to-grok': {
     imagine: { model: 'grok-4.6', effort: 'high' },
@@ -320,7 +315,11 @@ export function safeEffort(agent, effort) {
 function buildArgs(agent, model, effort) {
   if (!agent || !model) return [];
   const eff = safeEffort(agent, effort);
-  if (agent === 'claude') return ['--model', model];
+  if (agent === 'claude') {
+    const args = ['--model', model];
+    if (eff != null) args.push('--effort', eff);
+    return args;
+  }
   if (agent === 'codex') {
     const args = ['-m', model];
     if (eff != null) args.push('-c', `model_reasoning_effort=${eff}`);

@@ -373,9 +373,9 @@ test('[1m] context: packet.budget.context === "1m" also triggers the suffix on a
 // 5. args construction
 // -----------------------------------------------------------------------
 
-test('args: a claude row builds ["--model", <model>]', () => {
+test('args: a claude row builds ["--model", <model>, "--effort", <effort>]', () => {
   const result = resolveModel({ direction: 'grok-to-claude', taskClass: 'architecture', env: NO_ENV });
-  assert.deepEqual(result.args, ['--model', 'claude-opus-5']);
+  assert.deepEqual(result.args, ['--model', 'claude-opus-5', '--effort', 'high']);
 });
 
 test('args: a codex row builds ["-m", <model>, "-c", "model_reasoning_effort=<effort>"]', () => {

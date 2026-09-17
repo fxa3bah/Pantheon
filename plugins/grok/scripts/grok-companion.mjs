@@ -23,7 +23,7 @@ import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { resolveModel, classifyTask, MODEL_TIERS, ROUTING_TABLE } from './lib/model-routing.mjs';
 import { withCompliance } from './lib/compliance.mjs';
 import { makeJobId, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
-import { detectHarnesses } from './lib/harness-detect.mjs';
+import { detectHarnesses, detectHost, annotateInventory } from './lib/harness-detect.mjs';
 import { pickRoute } from './lib/auto-route.mjs';
 import { runExtraHarness } from './lib/extra-harness.mjs';
 import { delegateToClaude } from './claude-companion.mjs';
@@ -703,16 +703,20 @@ function cmdCancel(args) {
   }
 }
 
-function cmdScan(args) {
+function cmdScan(args, { from } = {}) {
   const asJson = args.includes('--json');
-  const inventory = detectHarnesses();
+  const host = detectHost(process.env, from);
+  const inventory = annotateInventory(detectHarnesses(), host.id);
   if (asJson) {
-    console.log(JSON.stringify(inventory, null, 2));
+    console.log(JSON.stringify({ ...inventory, hostSource: host.source }, null, 2));
     return inventory;
   }
-  console.log(`Pantheon scan: ${inventory.found.length}/${inventory.scanned} harnesses present`);
+  const hostLabel = host.id ? `${host.id} (${host.source})` : 'unknown (pass --from <harness>)';
+  console.log(`Pantheon scan: current host ${hostLabel}`);
+  console.log(`${inventory.found.length}/${inventory.scanned} harnesses present`);
   for (const row of inventory.found) {
-    console.log(`  ${row.id.padEnd(12)} ${row.version || 'ok'}  ${row.path}`);
+    const mark = row.current ? 'current' : 'ready';
+    console.log(`  ${row.id.padEnd(12)} ${mark.padEnd(8)} ${row.version || 'ok'}  ${row.path}`);
   }
   for (const row of inventory.missing) {
     console.log(`  ${row.id.padEnd(12)} missing`);
@@ -720,35 +724,37 @@ function cmdScan(args) {
   return inventory;
 }
 
-async function cmdAuto(rawArgs, { quality, harness, lane } = {}) {
+async function cmdAuto(rawArgs, { quality, harness, lane, from } = {}) {
   const parsedInput = parsePantheonInput(rawArgs);
   const requestText = parsedInput.prompt || rawArgs;
   if (!requestText) {
-    console.error('Usage: grok-companion auto <request> [--quality good|better|best] [--harness <id>] [--lane plan|imagine|implement|review]');
+    console.error('Usage: grok-companion auto <request> [--quality good|better|best] [--harness <id>] [--from <host>] [--lane plan|imagine|implement|review]');
     process.exit(1);
   }
-  const inventory = detectHarnesses();
+  const host = detectHost(process.env, from || parsedInput.packet?.from);
+  const inventory = annotateInventory(detectHarnesses(), host.id);
   const route = pickRoute({
     text: requestText,
     kind: lane || parsedInput.packet?.lane || null,
     quality: quality || parsedInput.packet?.quality || 'better',
     inventory,
-    requestedHarness: harness || null
+    requestedHarness: harness || null,
+    host: host.id
   });
   if (!route.harness) {
     console.error(`[pantheon] no installed harness can handle kind=${route.kind}`);
     process.exit(1);
   }
-  console.log(`[pantheon] auto ${route.quality}/${route.kind} → ${route.harness}${route.model ? ` (${route.model}${route.effort ? '@' + route.effort : ''})` : ''}`);
+  console.log(`[pantheon] auto from ${route.host} ${route.quality}/${route.kind} → ${route.harness}${route.model ? ` (${route.model}${route.effort ? '@' + route.effort : ''})` : ''}`);
   if (route.fallbackFrom) {
     console.error(`[pantheon] ${route.fallbackFrom} is not installed; fell back to ${route.harness}`);
   }
 
   const payload = buildPayload(requestText, {
     lane: route.lane,
-    from: 'claude',
+    from: host.id || route.host || 'unknown',
     to: route.companion,
-    provenance: `Pantheon auto-route ${route.quality}/${route.kind}`
+    provenance: `Pantheon auto-route ${route.quality}/${route.kind} from ${host.id || 'unknown'}`
   });
 
   if (route.companion === 'grok') {
@@ -810,8 +816,8 @@ async function main() {
     case 'imagine': return cmdImagine(payload(raw || 'a simple test image'));
     case 'review': return cmdReview(payload(raw || 'review the recent changes in this workspace'));
     case 'task': return cmdTask(payload(raw));
-    case 'auto': return cmdAuto(payload(raw), { quality, harness, lane });
-    case 'scan': return cmdScan(rest);
+    case 'auto': return cmdAuto(payload(raw), { quality, harness, lane, from });
+    case 'scan': return cmdScan(rest, { from });
     case 'status': return cmdStatus(rest);
     case 'result': return cmdResult(rest);
     case 'cancel': return cmdCancel(rest);

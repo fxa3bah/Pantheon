@@ -16,6 +16,46 @@ function normalizeText(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function section(title, value) {
+  const text = normalizeText(value);
+  return text ? [title, text, ''] : [];
+}
+
+const DEFAULT_DO_NOT = 'No preamble. No sycophancy. Do not restate the objective. Do not pad.';
+const RETURN_CONTRACT = [
+  'Return exactly these fields, nothing else:',
+  'status: done | blocked',
+  'result: the answer',
+  'files: paths or none',
+  'blocker: one line or none',
+  'Stop when the objective is met or blocked. Do not narrate tool use.'
+].join('\n');
+
+export function formatHandoffPrompt(packet, media = []) {
+  const lines = [
+    `Handoff: ${packet.from} → ${packet.to} [${packet.lane}]`,
+    '',
+    ...section('Objective', packet.objective),
+    ...section('Context', packet.context),
+    ...section('Constraints', packet.constraints),
+    ...section('Permissions', packet.permissions),
+    ...section('Budget', packet.budget),
+    ...section('Success', packet.success_criteria || packet.success),
+    ...section('Do not', packet.do_not || packet.avoid || DEFAULT_DO_NOT),
+    ...section('Provenance', packet.provenance)
+  ];
+  if (media.length) {
+    lines.push(
+      'Media',
+      ...media.map(item => `- ${item.path}${item.type ? ` (${item.type})` : ''}${item.label ? ` — ${item.label}` : ''}`),
+      ''
+    );
+  }
+  const ret = normalizeText(packet.return_format);
+  lines.push(ret ? `Return format\n${ret}\n\n${RETURN_CONTRACT}` : RETURN_CONTRACT);
+  return lines.join('\n').trim();
+}
+
 function normalizeMedia(media) {
   if (!Array.isArray(media)) return [];
   return media
@@ -51,44 +91,18 @@ export function parsePantheonInput(rawInput) {
   }
 
   const media = normalizeMedia(parsed.media);
-  const prompt = [
-    'Pantheon handoff packet.',
-    `From: ${parsed.from}`,
-    `To: ${parsed.to}`,
-    `Lane: ${parsed.lane}`,
-    '',
-    'Objective:',
-    normalizeText(parsed.objective),
-    '',
-    'Context:',
-    normalizeText(parsed.context) || '(none provided)',
-    '',
-    'Constraints:',
-    normalizeText(parsed.constraints) || '(none provided)',
-    '',
-    'Permissions:',
-    normalizeText(parsed.permissions) || '(unspecified; default to read-only unless explicitly allowed)',
-    '',
-    'Budget:',
-    normalizeText(parsed.budget) || '(unspecified)',
-    '',
-    'Return format:',
-    normalizeText(parsed.return_format) || '(clear concise result with provenance)',
-    '',
-    'Provenance:',
-    normalizeText(parsed.provenance) || '(none provided)',
-    media.length
-      ? [
-          '',
-          'Media:',
-          ...media.map(item => `- ${item.path}${item.type ? ` (${item.type})` : ''}${item.label ? ` - ${item.label}` : ''}`)
-        ].join('\n')
-      : '',
-    '',
-    'via Pantheon.'
-  ].filter(Boolean).join('\n');
+  return {
+    isPacket: true,
+    prompt: formatHandoffPrompt(parsed, media),
+    packet: parsed,
+    media
+  };
+}
 
-  return { isPacket: true, prompt, packet: parsed, media };
+export function packetMaxTurns(packet) {
+  if (!packet) return null;
+  const n = Number(packet.max_turns ?? packet.budget?.max_turns);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
 }
 
 export function packetModel(packet) {
@@ -124,6 +138,7 @@ export function packetJobFields(parsedInput) {
       model: packetModel(parsedInput.packet),
       effort: packetEffort(parsedInput.packet),
       escalate: parsedInput.packet.escalate === true ? true : null,
+      max_turns: packetMaxTurns(parsedInput.packet),
       media: parsedInput.media
     }
   };

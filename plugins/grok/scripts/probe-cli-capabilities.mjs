@@ -81,7 +81,7 @@ if (claudeHelp.err) {
   if (hasEffort !== manifestHasEffort) {
     note(`claude --effort present=${hasEffort} but manifest efforts=${JSON.stringify(AGENT_CAPABILITIES.claude.efforts)}`);
   } else {
-    good(`--effort presence matches the manifest (present=${hasEffort}; Pantheon does not route it)`);
+    good(`--effort presence matches the manifest (present=${hasEffort}; Pantheon routes it)`);
   }
   for (const m of AGENT_CAPABILITIES.claude.models) {
     // `--help` does not enumerate models; a bad slug only fails at run time.

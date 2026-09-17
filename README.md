@@ -100,7 +100,9 @@ For every hop, `resolveModel()` picks the model in this order — first match wi
 
 ### Harness scan and auto-route
 
-`/grok:scan` inventories every catalogued CLI on this machine (PATH first, then known home paths). `/grok:auto` classifies the job and walks a Good / Better / Best preference list of **present** harnesses.
+`/grok:scan` inventories every catalogued CLI on this machine. It is not Grok-primary. It marks the harness you are already in (`--from`, `PANTHEON_HOST`, or an env fingerprint), then lists what else can take the job.
+
+`/grok:auto` classifies the job and walks a Good / Better / Best preference list of **present** harnesses. The pick is for the work, not for the plugin that launched the scan.
 
 | Quality | Meaning |
 |---|---|
@@ -112,8 +114,10 @@ Image and video stay on Grok when Grok is installed. `"plan this using ultracode
 
 ```bash
 /grok:scan
+/grok:scan --from omp
 /grok:auto plan this using ultracode --quality best
-node plugins/grok/scripts/grok-companion.mjs auto "implement the helper" --quality good
+node plugins/grok/scripts/grok-companion.mjs scan --from claude
+node plugins/grok/scripts/grok-companion.mjs auto "implement the helper" --from omp --quality good
 ```
 
 ---

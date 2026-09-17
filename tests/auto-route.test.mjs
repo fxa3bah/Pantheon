@@ -65,3 +65,15 @@ test('plan on best quality prefers Claude when present', () => {
   assert.equal(route.harness, 'claude');
   assert.equal(route.model, MODEL_TIERS.claude.deep);
 });
+
+test('pickRoute records the requesting host, not grok-by-default', () => {
+  const route = pickRoute({
+    text: 'plan this architecture',
+    quality: 'best',
+    inventory: inventoryWith(['agy', 'hermes', 'omp', 'claude']),
+    host: 'omp'
+  });
+  assert.equal(route.host, 'omp');
+  assert.equal(route.harness, 'claude');
+  assert.equal(route.direction, 'omp-to-claude');
+});

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePantheonInput, packetJobFields, packetModel } from '../plugins/grok/scripts/lib/pantheon-packet.mjs';
+import { parsePantheonInput, packetJobFields, packetModel, packetMaxTurns } from '../plugins/grok/scripts/lib/pantheon-packet.mjs';
 
 test('plain prompts remain backward-compatible', () => {
   const parsed = parsePantheonInput('review this change via Pantheon');
@@ -25,9 +25,24 @@ test('valid Pantheon packet becomes a handoff prompt', () => {
     model: 'grok-4.6'
   }));
   assert.equal(parsed.isPacket, true);
-  assert.match(parsed.prompt, /Pantheon handoff packet/);
-  assert.match(parsed.prompt, /Objective:\nCreate a campaign image/);
+  assert.match(parsed.prompt, /Handoff: codex → grok \[visual\]/);
+  assert.match(parsed.prompt, /Objective\nCreate a campaign image/);
+  assert.match(parsed.prompt, /status: done \| blocked/);
+  assert.doesNotMatch(parsed.prompt, /none provided|via Pantheon/);
   assert.equal(packetModel(parsed.packet), 'grok-4.6');
+});
+
+test('empty packet fields are omitted', () => {
+  const parsed = parsePantheonInput(JSON.stringify({
+    pantheon_packet: true,
+    from: 'grok',
+    to: 'claude',
+    lane: 'architecture',
+    objective: 'Pin the auth model.'
+  }));
+  assert.doesNotMatch(parsed.prompt, /Context\n/);
+  assert.match(parsed.prompt, /Do not\nNo preamble/);
+  assert.equal(packetMaxTurns({ budget: { max_turns: 6 } }), 6);
 });
 
 test('Pantheon packet requires core routing fields', () => {

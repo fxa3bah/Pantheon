@@ -222,6 +222,76 @@ export function detectHarnesses(io = {}) {
   });
 }
 
+const HOST_ALIASES = Object.freeze({
+  claude: 'claude',
+  'claude-code': 'claude',
+  grok: 'grok',
+  'grok-build': 'grok',
+  codex: 'codex',
+  omp: 'omp',
+  'oh-my-pi': 'omp',
+  pi: 'pi',
+  opencode: 'opencode',
+  agy: 'agy',
+  hermes: 'hermes',
+  ultracode: 'ultracode',
+  qoder: 'qoder',
+  gemini: 'gemini',
+  antigravity: 'antigravity',
+  warp: 'warp',
+  oz: 'warp'
+});
+
+export function normalizeHostId(raw) {
+  if (typeof raw !== 'string') return null;
+  const key = raw.trim().toLowerCase();
+  return HOST_ALIASES[key] || null;
+}
+
+/**
+ * Who is running this scan / auto-route.
+ * Explicit flag or PANTHEON_HOST wins. Env fingerprints next.
+ * Never default to grok because the companion lives in the Grok plugin.
+ */
+export function detectHost(env = process.env, explicit = null) {
+  const fromFlag = normalizeHostId(explicit);
+  if (fromFlag) return { id: fromFlag, source: 'flag' };
+  const fromEnv = normalizeHostId(env.PANTHEON_HOST || env.PANTHEON_FROM);
+  if (fromEnv) return { id: fromEnv, source: 'env' };
+  if (env.CLAUDECODE === '1' || env.CLAUDE_CODE === '1' || env.CLAUDE_CODE_ENTRYPOINT) {
+    return { id: 'claude', source: 'env' };
+  }
+  if (env.CODEX_SANDBOX || env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE || env.CODEX_THREAD_ID) {
+    return { id: 'codex', source: 'env' };
+  }
+  if (env.PI_CODING_AGENT || env.PI_SMOL_MODEL || env.OMP_PROFILE) {
+    return { id: 'omp', source: 'env' };
+  }
+  if (env.OPENCODE || env.OPENCODE_SERVER_PASSWORD || env.OPENCODE_CONFIG) {
+    return { id: 'opencode', source: 'env' };
+  }
+  if (env.HERMES_HOME || env.HERMES_ACCEPT_HOOKS) {
+    return { id: 'hermes', source: 'env' };
+  }
+  if (env.AGY_PROJECT || env.AGY_MODEL) {
+    return { id: 'agy', source: 'env' };
+  }
+  if (env.GROK_SESSION || env.GROK_BRIDGE_SESSION) {
+    return { id: 'grok', source: 'env' };
+  }
+  return { id: null, source: 'unknown' };
+}
+
+export function annotateInventory(inventory, hostId) {
+  const found = inventory.found.map((row) => Object.freeze({ ...row, current: row.id === hostId }));
+  found.sort((a, b) => Number(b.current) - Number(a.current));
+  return Object.freeze({
+    ...inventory,
+    host: hostId || null,
+    found: Object.freeze(found)
+  });
+}
+
 export function presentIds(inventory) {
   return inventory.found.map((row) => row.id);
 }

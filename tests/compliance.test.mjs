@@ -29,7 +29,7 @@ test('compliance: unknown agent yields an empty header (safe to concatenate)', (
 
 test('compliance: withCompliance prepends the header and preserves the task', () => {
   const out = withCompliance('claude', 'DO THE TASK', {});
-  assert.match(out, /operating context/i);
+  assert.match(out, /Pantheon hop/);
   assert.match(out, /DO THE TASK$/);
   assert.notEqual(out, 'DO THE TASK');
 });

@@ -24,8 +24,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { assertHopAllowed, childEnv, armTimeout, sanitizeClaudeArgs, startHeartbeat, currentHop , GUARDED_SPAWN_OPTS} from './lib/bridge-guard.mjs';
-import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
+import { assertHopAllowed, childEnv, armTimeout, sanitizeClaudeArgs, startHeartbeat, currentHop, writesAllowed, GUARDED_SPAWN_OPTS } from './lib/bridge-guard.mjs';
+import { parsePantheonInput, packetJobFields, packetMaxTurns } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
 import { withCompliance } from './lib/compliance.mjs';
 import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.mjs';
@@ -157,6 +157,10 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
   const callerModelWins = hasFlag(safeExtra, '--model');
   const modelArgs = callerModelWins ? [] : (routed?.args ?? []);
   const permissionArgs = hasFlag(safeExtra, '--permission-mode') ? [] : ['--permission-mode', 'plan'];
+  const packetTurns = packetMaxTurns(options.packet);
+  const turnArgs = hasFlag(safeExtra, '--max-turns')
+    ? []
+    : ['--max-turns', String(packetTurns || (writesAllowed() ? 24 : 12))];
   // Report the model that actually ran, not the one the router picked. When a
   // caller --model suppressed routed.args the ledger used to record the routed
   // model anyway — the audit trail lied in exactly the override case you'd most
@@ -171,6 +175,7 @@ async function runClaudeHeadless(prompt, extraArgs = [], jobId, options = {}) {
     '-p', withCompliance('claude', prompt),
     '--output-format', 'json',
     ...permissionArgs,
+    ...turnArgs,
     ...safeExtra
   ];
 
@@ -236,7 +241,7 @@ export async function delegateToClaude(request, extraCliArgs = []) {
   saveJob(jobId, direction, { type: 'claude-delegate', request, status: 'running', ...routingFields, ...packetJobFields(parsedInput) });
 
   try {
-    const { stdout, notes, model, bare } = await runClaudeHeadless(prompt, extraCliArgs, jobId, { routed });
+    const { stdout, notes, model, bare } = await runClaudeHeadless(prompt, extraCliArgs, jobId, { routed, packet });
     let parsed;
     try {
       parsed = JSON.parse(stdout);
