@@ -27,7 +27,16 @@ function stripDangerous(args) {
   return out;
 }
 
+export function assertReadOnlyCapable(route) {
+  if (writesAllowed()) return;
+  if (route?.spawn?.readOnly === true) return;
+  throw new Error(
+    `${route?.companion || 'harness'} has no verified read-only mode; set GROK_BRIDGE_ALLOW_WRITES=1 or pick a pinned harness`
+  );
+}
+
 export function buildHarnessArgv(route, prompt) {
+  assertReadOnlyCapable(route);
   const spawnPlan = route.spawn || { extra: [] };
   const extra = writesAllowed() ? [...(spawnPlan.extra || [])] : stripDangerous(spawnPlan.extra || []);
   const complianceAgent = ['claude', 'codex', 'grok'].includes(route.companion) ? route.companion : 'claude';

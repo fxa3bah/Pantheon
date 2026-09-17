@@ -160,9 +160,10 @@ export function sanitizeClaudeArgs(extraArgs = [], { pinnedModel = null } = {}) 
 
     out.push(extraArgs[i]);
   }
-  // Pin a read-only tool set so a delegated task can inspect but not change the machine.
-  out.unshift('--allowedTools', 'Read,Glob,Grep');
-  notes.push('enforced read-only --allowedTools Read,Glob,Grep (set GROK_BRIDGE_ALLOW_WRITES=1 to allow writes)');
+  // Pin availability (`--tools`) and approval (`--allowedTools`). Approval-only
+  // still leaves Bash present in the catalog; `--tools` is the actual hide.
+  out.unshift('--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep');
+  notes.push('enforced read-only --tools/--allowedTools Read,Glob,Grep (set GROK_BRIDGE_ALLOW_WRITES=1 to allow writes)');
   return { args: out, gated: true, notes };
 }
 
@@ -398,11 +399,17 @@ export function armTimeout(child, onTimeout, ms = DEFAULT_TIMEOUT_MS, { onTimedO
   // Reap the group on parent exit to keep that from happening.
   const reap = () => killTree(child, 'SIGTERM');
   process.once('exit', reap);
+  const onSignal = () => {
+    reap();
+    process.exit(128);
+  };
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.once(sig, onSignal);
 
   const clear = () => {
     clearTimeout(timer);
     if (killTimer) clearTimeout(killTimer);
     process.removeListener('exit', reap);
+    for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.removeListener(sig, onSignal);
   };
   child.on('close', clear);
   child.on('error', clear);

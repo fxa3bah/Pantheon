@@ -465,3 +465,10 @@ test('immutability: resolveModel returns a frozen object that cannot be mutated'
   assert.ok(Object.isFrozen(result));
   assert.throws(() => { result.model = 'tampered'; }, TypeError);
 });
+
+test('classifyTask: summarize/health/reasoning lanes hit cheap or matching rows', () => {
+  assert.equal(classifyTask('grok-to-claude', 'task', { lane: 'summarize' }), 'summarize');
+  assert.equal(classifyTask('grok-to-claude', 'task', { lane: 'health' }), 'health');
+  assert.equal(classifyTask('grok-to-claude', 'task', { lane: 'reasoning' }), 'second-opinion');
+  assert.equal(classifyTask('codex-to-grok', 'task', { lane: 'draft' }), 'draft');
+});

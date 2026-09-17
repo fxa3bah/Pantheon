@@ -11,7 +11,7 @@ Hand `$ARGUMENTS` to Pantheon's auto-router.
 - **Do not pick a model.** The router picks Good/Better/Best from the live harness scan.
 - Image/video still goes to Grok Imagine. ChatGPT Images 2.0 / `gpt-image-2` is not a CLI `-m` slug.
 - Default quality is `better`. Add `--quality best` for the deepest present option.
-- Runs the selected harness read-only unless `GROK_BRIDGE_ALLOW_WRITES=1`.
+- Mesh legs (Claude/Grok/Codex) stay read-only unless `GROK_BRIDGE_ALLOW_WRITES=1`. Extra harnesses only run when they have a verified read-only pin (agy `--mode plan`, hermes `--safe-mode`, omp `--plan`); otherwise the hop is refused.
 
 Foreground (default):
 ```bash

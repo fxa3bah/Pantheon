@@ -38,7 +38,7 @@ import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { upsertJob } from './lib/state.mjs';
 import { assertHopAllowed, childEnv, armTimeout, startHeartbeat, currentHop, sanitizeCodexArgs , GUARDED_SPAWN_OPTS} from './lib/bridge-guard.mjs';
 import { withCompliance } from './lib/compliance.mjs';
-import { makeJobId, splitRequestAndExtra, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
+import { makeJobId, splitRequestAndExtra, saveJob, failJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
 
 export function resolveCodexBinary() {
   const which = process.platform === 'win32' ? 'where' : 'which';
@@ -303,7 +303,7 @@ export async function delegateToCodex(request, extraCliArgs = []) {
 
     return { jobId, output: result, session_id, pantheon_warning, raw: stdout };
   } catch (e) {
-    saveJob(jobId, direction, { status: 'failed', error: e.message });
+    failJob(jobId, direction, e);
     console.error('[pantheon] Codex delegate failed:', e.message);
     throw e;
   }

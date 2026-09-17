@@ -18,6 +18,11 @@ test('classifyJob maps image and ultracode plan phrasing', () => {
   assert.equal(classifyJob('rename a helper'), 'reasoning');
 });
 
+test('logo/thumbnail in a review or fix never select Imagine', () => {
+  assert.equal(classifyJob('review the logo upload handler for path traversal'), 'review');
+  assert.equal(classifyJob('fix the thumbnail cache bug'), 'implement');
+});
+
 test('requestedHarnessFromText reads "using ultracode"', () => {
   assert.equal(requestedHarnessFromText('plan this using ultracode'), 'ultracode');
   assert.equal(requestedHarnessFromText('review via omp'), 'omp');
@@ -76,4 +81,16 @@ test('pickRoute records the requesting host, not grok-by-default', () => {
   assert.equal(route.host, 'omp');
   assert.equal(route.harness, 'claude');
   assert.equal(route.direction, 'omp-to-claude');
+});
+
+test('extra harnesses without a verified read-only pin are refused', async () => {
+  const { assertReadOnlyCapable } = await import('../plugins/grok/scripts/lib/extra-harness.mjs');
+  const inventory = inventoryWith(['opencode', 'agy', 'hermes']);
+  const open = pickRoute({ text: 'implement the helper', quality: 'better', inventory });
+  assert.equal(open.harness, 'opencode');
+  assert.equal(open.spawn.readOnly, false);
+  assert.throws(() => assertReadOnlyCapable(open), /no verified read-only mode/);
+  const agy = pickRoute({ text: 'implement the helper', quality: 'good', inventory });
+  assert.equal(agy.harness, 'agy');
+  assert.doesNotThrow(() => assertReadOnlyCapable(agy));
 });

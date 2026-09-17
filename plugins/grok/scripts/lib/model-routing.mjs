@@ -161,14 +161,17 @@ function laneTaskClass(packet, agent) {
   const lane = packet?.lane;
   if (!nonEmptyString(lane)) return null;
   const l = lane.trim().toLowerCase();
-  if (l === 'visual' || l === 'image' || l === 'video') return 'imagine';
+  if (l === 'visual' || l === 'image' || l === 'video' || l === 'imagine' || l === 'assets') return 'imagine';
   if (l.includes('security')) return 'security-review';
   if (l === 'review') return agent === 'grok' ? 'creative-review' : 'review';
   if (l === 'implement' || l === 'build') return 'implement';
   if (l === 'verify' || l === 'test') return 'verify';
   if (l === 'architecture' || l === 'design') return 'architecture';
   if (l === 'data' || l === 'data-model') return 'data-model';
-  if (l === 'second-opinion') return 'second-opinion';
+  if (l === 'second-opinion' || l === 'reasoning') return 'second-opinion';
+  if (l === 'summarize') return 'summarize';
+  if (l === 'health') return 'health';
+  if (l === 'draft') return agent === 'grok' ? 'draft' : 'summarize';
   return null;
 }
 function subcommandTaskClass(subcommand, agent, generic) {

@@ -22,7 +22,8 @@ import { upsertJob, readJob, listJobs } from './lib/state.mjs';
 import { parsePantheonInput, packetJobFields } from './lib/pantheon-packet.mjs';
 import { resolveModel, classifyTask, MODEL_TIERS, ROUTING_TABLE } from './lib/model-routing.mjs';
 import { withCompliance } from './lib/compliance.mjs';
-import { makeJobId, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
+import { makeJobId, saveJob, failJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
+import { findHost, runRemoteCompanion } from './lib/host-bridge.mjs';
 import { detectHarnesses, detectHost, annotateInventory } from './lib/harness-detect.mjs';
 import { pickRoute } from './lib/auto-route.mjs';
 import { runExtraHarness } from './lib/extra-harness.mjs';
@@ -402,7 +403,7 @@ async function cmdImagine(rawArgs) {
     console.log(`\n[pantheon] Job ${jobId} complete. Gallery: ${galleryDir}`);
     console.log(`Use /grok:result ${jobId} (or --json) later if needed.`);
   } catch (e) {
-    saveJob(jobId, direction, { status: 'failed', error: e.message });
+    failJob(jobId, direction, e);
     console.error('Imagine job failed:', e.message);
     process.exit(1);
   }
@@ -439,7 +440,7 @@ async function cmdReview(rawArgs) {
     if (cost != null) console.log(`[pantheon] cost: $${Number(cost).toFixed(4)}`);
     console.log(`\n[pantheon] Job ${jobId} complete.`);
   } catch (e) {
-    saveJob(jobId, direction, { status: 'failed', error: e.message });
+    failJob(jobId, direction, e);
     console.error('Review job failed:', e.message);
     process.exit(1);
   }
@@ -465,7 +466,7 @@ async function cmdTask(rawArgs) {
     console.log(clean);
     if (cost != null) console.log(`[pantheon] cost: $${Number(cost).toFixed(4)}`);
   } catch (e) {
-    saveJob(jobId, direction, { status: 'failed', error: e.message });
+    failJob(jobId, direction, e);
     console.error('Task failed:', e.message);
     process.exit(1);
   }
@@ -724,12 +725,27 @@ function cmdScan(args, { from } = {}) {
   return inventory;
 }
 
-async function cmdAuto(rawArgs, { quality, harness, lane, from } = {}) {
+async function cmdAuto(rawArgs, { quality, harness, lane, from, host: hostId } = {}) {
   const parsedInput = parsePantheonInput(rawArgs);
   const requestText = parsedInput.prompt || rawArgs;
   if (!requestText) {
-    console.error('Usage: grok-companion auto <request> [--quality good|better|best] [--harness <id>] [--from <host>] [--lane plan|imagine|implement|review]');
+    console.error('Usage: grok-companion auto <request> [--quality good|better|best] [--harness <id>] [--from <host>] [--host <id>] [--lane plan|imagine|implement|review]');
     process.exit(1);
+  }
+  if (hostId) {
+    const remote = findHost(hostId);
+    if (!remote) {
+      console.error(`[pantheon] unknown host ${hostId}; add it to ~/.pantheon/hosts.json`);
+      process.exit(1);
+    }
+    if (!remote.local) {
+      const hop = await runRemoteCompanion(remote, 'auto', rawArgs, {
+        extra: ['--quality', quality || 'better'].concat(harness ? ['--harness', harness] : [])
+      });
+      console.log(hop.stdout);
+      if (hop.stderr) console.error(hop.stderr);
+      return hop;
+    }
   }
   const host = detectHost(process.env, from || parsedInput.packet?.from);
   const inventory = annotateInventory(detectHarnesses(), host.id);
@@ -750,12 +766,17 @@ async function cmdAuto(rawArgs, { quality, harness, lane, from } = {}) {
     console.error(`[pantheon] ${route.fallbackFrom} is not installed; fell back to ${route.harness}`);
   }
 
-  const payload = buildPayload(requestText, {
-    lane: route.lane,
-    from: host.id || route.host || 'unknown',
-    to: route.companion,
-    provenance: `Pantheon auto-route ${route.quality}/${route.kind} from ${host.id || 'unknown'}`
-  });
+  const payload = parsedInput.isPacket
+    ? rawArgs
+    : buildPayload(requestText, {
+        lane: route.lane,
+        from: host.id || route.host || 'unknown',
+        to: route.companion,
+        provenance: `Pantheon auto-route ${route.quality}/${route.kind} from ${host.id || 'unknown'}`,
+        model: route.model,
+        effort: route.effort,
+        quality: route.quality
+      });
 
   if (route.companion === 'grok') {
     if (route.kind === 'imagine') return cmdImagine(payload);
@@ -795,7 +816,7 @@ async function cmdAuto(rawArgs, { quality, harness, lane, from } = {}) {
     console.log(`\n[pantheon] Job ${jobId} complete via ${route.harness}.`);
     return { jobId, output: stdout, route };
   } catch (e) {
-    saveJob(jobId, route.direction, { status: 'failed', error: e.message });
+    failJob(jobId, route.direction, e);
     console.error('Auto job failed:', e.message);
     process.exit(1);
   }
@@ -807,7 +828,7 @@ async function main() {
   // `--lane`/`--from` are companion-level: they let a caller declare the kind of
   // work without hand-writing a JSON packet, and must not end up inside the
   // prompt text (rest is joined into one string below).
-  const { lane, from, quality, harness, rest: promptArgs } = extractCompanionFlags(rest);
+  const { lane, from, quality, harness, host, rest: promptArgs } = extractCompanionFlags(rest);
   const raw = promptArgs.join(' ').trim();
   const payload = (text) => buildPayload(text, { lane, from, to: 'grok' });
 
@@ -816,7 +837,7 @@ async function main() {
     case 'imagine': return cmdImagine(payload(raw || 'a simple test image'));
     case 'review': return cmdReview(payload(raw || 'review the recent changes in this workspace'));
     case 'task': return cmdTask(payload(raw));
-    case 'auto': return cmdAuto(payload(raw), { quality, harness, lane, from });
+    case 'auto': return cmdAuto(payload(raw), { quality, harness, lane, from, host });
     case 'scan': return cmdScan(rest, { from });
     case 'status': return cmdStatus(rest);
     case 'result': return cmdResult(rest);

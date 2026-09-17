@@ -28,7 +28,9 @@ export function splitRawArgumentString(raw) {
 // If argv arrived as a single whitespace-bearing string, re-split it; otherwise
 // pass the array through untouched.
 export function normalizeArgv(args) {
-  if (args.length === 1 && /\s/.test(args[0])) return splitRawArgumentString(args[0]);
+  // A single argv element is opaque prompt text. Re-splitting it lifted
+  // trailing `--model` / `--lane` out of honest prose ("Explain --model haiku")
+  // and smashed pretty-printed packets. Flags must already be separate tokens.
   return args;
 }
 
@@ -96,7 +98,7 @@ export function splitRequestAndExtra(args, valueFlags, flagPrefix = '--', knownF
 // is without hand-building a JSON packet. The slash commands used to embed a
 // full `{"pantheon_packet":true,…}` blob with a JSON-escaped objective inline,
 // which is both unreadable and one bad quote away from a malformed packet.
-const COMPANION_FLAGS = new Set(['--lane', '--from', '--quality', '--harness']);
+const COMPANION_FLAGS = new Set(['--lane', '--from', '--quality', '--harness', '--host']);
 
 export const COMPANION_FLAG_NAMES = COMPANION_FLAGS;
 
@@ -110,6 +112,7 @@ export function extractCompanionFlags(extra = []) {
   let from = null;
   let quality = null;
   let harness = null;
+  let host = null;
   for (let i = 0; i < extra.length; i++) {
     const tok = extra[i];
     const eq = tok.indexOf('=');
@@ -119,9 +122,10 @@ export function extractCompanionFlags(extra = []) {
     if (name === '--lane') lane = value ?? null;
     else if (name === '--from') from = value ?? null;
     else if (name === '--quality') quality = value ?? null;
+    else if (name === '--host') host = value ?? null;
     else harness = value ?? null;
   }
-  return { lane, from, quality, harness, rest };
+  return { lane, from, quality, harness, host, rest };
 }
 
 /**
@@ -130,16 +134,26 @@ export function extractCompanionFlags(extra = []) {
  * request untouched (plain prompts stay plain — no packet ceremony for
  * `/grok:task "look at this"`).
  */
-export function buildPayload(request, { lane, from, to, provenance }) {
-  if (!lane) return request;
-  return JSON.stringify({
+export function buildPayload(request, { lane, from, to, provenance, model, effort, quality } = {}) {
+  if (!lane && !model) return request;
+  const packet = {
     pantheon_packet: true,
     from: from || 'claude',
     to,
-    lane,
+    lane: lane || 'task',
     objective: request,
     provenance: provenance || `Delegated via Pantheon to ${to}.`
-  });
+  };
+  if (model) packet.model = model;
+  if (effort) packet.effort = effort;
+  if (quality) packet.quality = quality;
+  return JSON.stringify(packet);
+}
+
+export function failJob(jobId, direction, error) {
+  const msg = error?.message || String(error);
+  const status = /timed out/i.test(msg) ? 'timed_out' : 'failed';
+  return saveJob(jobId, direction, { status, error: msg });
 }
 
 // The single ledger writer both delegation directions go through. All job state

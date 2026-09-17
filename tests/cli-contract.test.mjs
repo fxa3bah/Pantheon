@@ -146,6 +146,13 @@ test('a genuine trailing flag run is still parsed as flags', () => {
   assert.deepEqual(extra, ['--model', 'claude-opus-4-8', '--bare']);
 });
 
+test('a single argv blob mentioning --model stays opaque prompt', () => {
+  const prompt = 'Explain --model haiku';
+  const { request, extra } = splitRequestAndExtra([prompt], CLAUDE_VALUE_FLAGS, '--', CLAUDE_KNOWN);
+  assert.equal(request, prompt);
+  assert.deepEqual(extra, []);
+});
+
 test('codex single-dash prose tokens stay prose', () => {
   const codexValue = new Set(['-m', '--model', '-c', '--config']);
   const codexKnown = new Set([...codexValue, '--json']);
@@ -173,6 +180,7 @@ test('claude gate strips config flags that would re-add tools past the pin', () 
   assert.ok(!args.includes('/'), 'stripped --add-dir left its value behind');
   assert.equal(notes.filter(n => n.startsWith('stripped ')).length, 4);
   assert.ok(args.includes('--allowedTools'));
+  assert.ok(args.includes('--tools'));
 });
 
 test('claude gate strips a caller --model when the router pinned a security review', () => {
@@ -444,6 +452,28 @@ test('buildPayload produces a packet the parser accepts, with the objective verb
   assert.equal(parsed.packet.lane, 'review');
   assert.equal(parsed.packet.from, 'claude');
   assert.equal(parsed.packet.to, 'codex');
+});
+
+test('buildPayload carries auto-route model/effort so companions do not drop the pick', () => {
+  const payload = buildPayload('implement the helper', {
+    lane: 'implement', from: 'claude', to: 'codex', model: 'gpt-5.5', effort: 'xhigh'
+  });
+  const { packet } = parsePantheonInput(payload);
+  const r = resolveModel({
+    direction: 'claude-to-codex',
+    taskClass: classifyTask('claude-to-codex', 'task', packet),
+    packet,
+    env: NO_ENV
+  });
+  assert.equal(r.model, 'gpt-5.5');
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.source, 'packet');
+});
+
+test('extractCompanionFlags reads --host', () => {
+  const { host, rest } = extractCompanionFlags(['--host', 'vps', 'do the thing']);
+  assert.equal(host, 'vps');
+  assert.deepEqual(rest, ['do the thing']);
 });
 
 test('a lane routes to the intended task class end to end', () => {

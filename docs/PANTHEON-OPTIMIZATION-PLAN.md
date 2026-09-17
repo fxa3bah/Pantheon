@@ -87,6 +87,21 @@ The routing table in `plugins/grok/scripts/lib/model-routing.mjs` is canonical; 
 
 Bridge invocations should record the model actually requested or used in the job ledger.
 
+## SSH host hops
+
+Machines do not share OAuth. SSH is only the pipe. Inventory lives in `~/.pantheon/hosts.json` (override with `PANTHEON_HOSTS`):
+
+```json
+{
+  "hosts": [
+    { "id": "mini", "local": true },
+    { "id": "vps", "ssh": "faadi@vps", "cwd": "/opt/pantheon" }
+  ]
+}
+```
+
+`/grok:auto --host vps "…"` opens `ssh -o BatchMode=yes -o ControlMaster=auto`, runs the same companion on that host, increments `BRIDGE_HOP`, and returns stdout. The remote CLI uses the login already on that box. The ledger stays local. Writes still need `GROK_BRIDGE_ALLOW_WRITES=1` on the executing host.
+
 ## Implementation Notes
 
 - Grok -> Claude must default to non-bare local OAuth mode:

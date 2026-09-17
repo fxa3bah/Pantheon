@@ -29,7 +29,7 @@ import { parsePantheonInput, packetJobFields, packetMaxTurns } from './lib/panth
 import { upsertJob } from './lib/state.mjs';
 import { withCompliance } from './lib/compliance.mjs';
 import { resolveModel, classifyTask, ROUTING_TABLE } from './lib/model-routing.mjs';
-import { makeJobId, splitRequestAndExtra, saveJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
+import { makeJobId, splitRequestAndExtra, saveJob, failJob, extractCompanionFlags, buildPayload } from './lib/companion-common.mjs';
 
 
 const VALUE_FLAGS = new Set([
@@ -279,7 +279,7 @@ export async function delegateToClaude(request, extraCliArgs = []) {
       raw: stdout
     };
   } catch (e) {
-    saveJob(jobId, direction, { status: 'failed', error: e.message });
+    failJob(jobId, direction, e);
     console.error('[pantheon] Claude delegate failed:', e.message);
     throw e;
   }

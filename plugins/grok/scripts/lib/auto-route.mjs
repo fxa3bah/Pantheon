@@ -38,14 +38,16 @@ const KIND_ALIASES = Object.freeze({
 });
 
 const KIND_HINTS = [
-  { kind: 'imagine', re: /\b(image|images|imagine|video|visual|hero shot|product shot|illustration|logo|thumbnail)\b/i },
+  { kind: 'review', re: /\b(review|critique|second look|multi-agent)\b/i },
+  { kind: 'verify', re: /\b(verify|test|repro(?:duce)?|failing test|ci)\b/i },
+  { kind: 'implement', re: /\b(implement|fix|build|code|refactor|write the)\b/i },
   { kind: 'security', re: /\b(security|authn|authz|authentication|authorization|credential|secret|payment|vulnerability)\b/i },
   { kind: 'plan', re: /\b(plan this|ultracode|architecture|spec(?:ify)?|design (?:the|a|this)|roadmap)\b/i },
-  { kind: 'verify', re: /\b(verify|test|repro(?:duce)?|failing test|ci)\b/i },
-  { kind: 'review', re: /\b(review|critique|second look|multi-agent)\b/i },
-  { kind: 'implement', re: /\b(implement|fix|build|code|refactor|write the)\b/i },
   { kind: 'summarize', re: /\b(summarize|summary|tl;dr|draft)\b/i },
-  { kind: 'reasoning', re: /\b(reason|second opinion|tradeoff|compare)\b/i }
+  { kind: 'reasoning', re: /\b(reason|second opinion|tradeoff|compare)\b/i },
+  // Generation verbs only. "logo"/"thumbnail" in a review or fix must not
+  // select the write-enabled Imagine lane.
+  { kind: 'imagine', re: /\b(imagine|generat(?:e|ing) (?:an? )?(?:image|images|video)|hero shot|product shot|illustration)\b/i }
 ];
 
 // Preference lists are ordered Good → Better → Best. Missing harnesses
@@ -169,26 +171,26 @@ function spawnPlan(harness, kind, quality, modelSpec) {
     const args = ['-p', '--cwd', process.cwd()];
     if (kind === 'plan') args.push('--plan');
     if (modelSpec.model) args.push(`--model=${modelSpec.model}`);
-    return { companion: 'omp', subcommand: null, extra: args, promptFlag: null };
+    return { companion: 'omp', subcommand: null, extra: args, promptFlag: null, readOnly: kind === 'plan' };
   }
   if (harness === 'opencode') {
     const args = ['run', '--dir', process.cwd(), '--format', 'json'];
     if (modelSpec.model) args.push('-m', modelSpec.model);
-    return { companion: 'opencode', subcommand: null, extra: args, promptFlag: null };
+    return { companion: 'opencode', subcommand: null, extra: args, promptFlag: null, readOnly: false };
   }
   if (harness === 'agy') {
     const args = ['-p', '--output-format', 'json', '--mode', 'plan'];
     if (modelSpec.model) args.push('--model', modelSpec.model);
     if (modelSpec.effort) args.push('--effort', modelSpec.effort);
-    return { companion: 'agy', subcommand: null, extra: args, promptFlag: null };
+    return { companion: 'agy', subcommand: null, extra: args, promptFlag: null, readOnly: true };
   }
   if (harness === 'hermes') {
-    return { companion: 'hermes', subcommand: null, extra: ['--safe-mode', '-z'], promptFlag: '-z' };
+    return { companion: 'hermes', subcommand: null, extra: ['--safe-mode', '-z'], promptFlag: '-z', readOnly: true };
   }
   if (harness === 'ultracode') {
-    return { companion: 'ultracode', subcommand: null, extra: [], promptFlag: null };
+    return { companion: 'ultracode', subcommand: null, extra: [], promptFlag: null, readOnly: false };
   }
-  return { companion: harness, subcommand: null, extra: [], promptFlag: null };
+  return { companion: harness, subcommand: null, extra: [], promptFlag: null, readOnly: false };
 }
 
 /**
